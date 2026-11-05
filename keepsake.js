@@ -1,0 +1,635 @@
+/* =====================================================================
+   born-somewhere v6.18 —— 珍藏（keepsake.js）
+   用走完的人生（或书架上的前世纪录）在本机生成：
+   1) 照片组合：9 张 1080×1440 直式图，对应微信朋友圈九宫格；默认流程就是「分享到朋友圈」
+   2) 人生相簿：可打印 / 存成 PDF 的书（浏览器列印）
+   3) 人生纪录册：单一 HTML 档（逐年表格、图表、家人、抉择、完整纪录）+ 逐年 CSV
+   全部在装置上产生，不上传。
+   ===================================================================== */
+(function () {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const isZh = () => LANG === 'zh-Hans' || LANG === 'zh-Hant';
+  const tx = (zh, en) => (isZh() ? zh : en);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  // 资料层多为繁体；简体介面时，送进 canvas 以外（HTML 档、列印页）的文字要先转
+  const H = (s) => (LANG === 'zh-Hans' && window.BornFun && BornFun.toHans) ? BornFun.toHans(String(s ?? '')) : String(s ?? '');
+  const SITE = () => location.origin + location.pathname.replace(/index\.html$/, '');
+  const SHARE_URL = () => SITE() + '?utm_source=keepsake&utm_medium=wechat';
+  const isWeChat = () => /MicroMessenger/i.test(navigator.userAgent);
+  const track = (n, p) => { try { window.BornFun?.track?.(n, p); } catch (e) { /* ignore */ } };
+
+  /* ---------------- 逐年快照（新人生起每年记一笔；旧纪录退回 5 年取样的 trajectory） ---------------- */
+  const _tick = window.tick;
+  window.tick = function () {
+    const r = _tick.apply(this, arguments);
+    try {
+      const L = STATE.life;
+      if (L && L.stats) {
+        L._yearly = L._yearly || [];
+        const last = L._yearly[L._yearly.length - 1];
+        if (!last || last.age !== L.age) {
+          const s = L.stats;
+          L._yearly.push({ age: L.age, h: Math.round(s.health || 0), hp: Math.round(s.happiness || 0), k: Math.round(s.knowledge || 0), so: Math.round(s.social || 0), m: Math.round(s.netAssets || 0), emp: s.employment || '', mar: !!s.married, kids: (s.kids || []).length });
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return r;
+  };
+  function yearly(life) {
+    if (life._yearly && life._yearly.length) return life._yearly;
+    return (life.trajectory || []).map(t => ({ age: t.age, h: t.health, hp: null, k: t.knowledge, so: t.relationship, m: null, emp: '', mar: null, kids: null }));
+  }
+
+  /* ---------------- 人生资料整理 ---------------- */
+  const STAGES = [
+    { id: 'child', min: 0, max: 12, zh: '童年', en: 'Childhood', icon: '🧸', color: ['#f6c177', '#f4a259'], img: 'assets/illus-home-cat.jpg' },
+    { id: 'teen', min: 13, max: 22, zh: '少年', en: 'Youth', icon: '🎒', color: ['#8bd3c7', '#4aa3a2'], img: 'assets/illus-time-seed.jpg' },
+    { id: 'young', min: 23, max: 39, zh: '青年', en: 'Young adult', icon: '🌱', color: ['#9ab8ff', '#5b7fe0'], img: null },
+    { id: 'mid', min: 40, max: 64, zh: '中年', en: 'Midlife', icon: '🏠', color: ['#c7a4ff', '#8a63d2'], img: null },
+    { id: 'elder', min: 65, max: 130, zh: '晚年', en: 'Later years', icon: '🍵', color: ['#e9b3a8', '#c2766a'], img: 'assets/illus-elder-hill.jpg' },
+  ];
+  const BORING = new Set(['focus', 'finance', 'log']);
+  function lifeYears(life) {
+    const by = life.year || NOW_YEAR;
+    return { by, bm: life.birthMonth || null, dy: by + (life.deathAge ?? life.age ?? 0) };
+  }
+  const fmtBirth = (life) => { const { by, bm } = lifeYears(life); return bm ? `${by}-${String(bm).padStart(2, '0')}` : String(by); };
+  function stageEvents(life, st, n) {
+    const rows = (life.log || []).filter(e => e && e.text && e.age >= st.min && e.age <= st.max && e.kind !== 'birth' && e.kind !== 'death').map(clean);
+    const seen = new Set();
+    const uniq = rows.filter(e => { const k = e.text.slice(0, 24); if (seen.has(k)) return false; seen.add(k); return true; });
+    const score = (e) => (e.starred ? 100 : 0) + (/story|big|decision|milestone|spouse|heavy|illness/.test(e.kind || '') ? 20 : 0) + (BORING.has(e.kind) ? -30 : 0) + Math.min(10, (e.text || '').length / 8);
+    const picked = [...uniq].sort((a, b) => score(b) - score(a)).slice(0, n || 5);
+    return picked.sort((a, b) => a.age - b.age);
+  }
+  const AUTO_MARK = /s*[（(](自動抉擇|自动抉择|自動|自动|auto)[）)]s*/gi;
+  const clean = (e) => Object.assign({}, e, { text: String(e.text).replace(AUTO_MARK, ' ').trim() });
+  const allStageEvents = (life, st) => (life.log || []).filter(e => e && e.text && e.age >= st.min && e.age <= st.max).map(clean);
+  function familyRows(life) {
+    const f = life.family || {};
+    const out = [];
+    const rel = (p, zh, en) => p && p.name && out.push({ rel: tx(zh, en), name: p.name, note: p.note || '' });
+    (f.parents || []).forEach(p => rel(p, p.sex === 'M' ? '父亲' : '母亲', p.sex === 'M' ? 'Father' : 'Mother'));
+    (f.grandparents || []).forEach(p => rel(p, p.sex === 'M' ? '祖父/外祖父' : '祖母/外祖母', 'Grandparent'));
+    (f.siblings || []).forEach(p => rel(p, p.sex === 'M' ? '兄弟' : '姊妹', 'Sibling'));
+    const partner = life.stats?.partner || f.partner;
+    if (partner && partner.name) rel(partner, '伴侣', 'Partner');
+    (life.stats?.kids || f.kids || []).forEach(k => rel(typeof k === 'string' ? { name: k } : k, '孩子', 'Child'));
+    return out;
+  }
+  function choiceRows(life) {
+    const rows = [];
+    (life.decisions || []).filter(d => d.key !== 'skipped').forEach(d => rows.push({ age: d.age, title: (d.icon ? d.icon + ' ' : '') + (d.label || d.id), note: d.note || '' }));
+    const story = (life.log || []).filter(e => e.kind === 'story' && /^「/.test(e.text || ''));
+    story.forEach(e => rows.push({ age: e.age, title: e.icon + ' ' + e.text.split('」')[0].replace('「', ''), note: e.text.split('」').slice(1).join('」').trim() }));
+    return rows.sort((a, b) => a.age - b.age);
+  }
+  function summary(life) {
+    const c = life.countryData || countryById(life.country);
+    const loc = localize(c);
+    const r = window.BornFun ? BornFun.rarity(c) : null;
+    const { by, dy } = lifeYears(life);
+    return {
+      c, loc, r, by, dy,
+      name: life.name?.full || life.name?.full_en || '—',
+      age: life.deathAge ?? life.age ?? 0,
+      sex: life.sex === 'M' ? tx('男', 'Male') : tx('女', 'Female'),
+      cause: life.cause ? (typeof causeLabel === 'function' ? causeLabel(life.cause) : life.cause) : '',
+      eth: life.ethnicity ? (BornFun.ETH_LABEL ? BornFun.ETH_LABEL(life.ethnicity) : life.ethnicity) : '',
+    };
+  }
+  function pickLives() {
+    const list = [];
+    if (STATE.life && STATE.life.died) list.push({ key: 'current', life: STATE.life, label: tx('刚走完的这一生', 'The life you just finished') });
+    (loadPastLives() || []).forEach((p, i) => {
+      if (!p.full) return;
+      if (STATE.life && STATE.life.died && i === 0 && p.full.regNumber === STATE.life.regNumber) return;
+      const c = countryById(p.country);
+      list.push({ key: 'past' + i, life: p.full, label: `${c ? c.flag : ''} ${p.name || '—'} · ${p.age} ${tx('岁', 'y')}` });
+    });
+    return list;
+  }
+
+  /* ---------------- 画布工具 ---------------- */
+  const W = 1080, HGT = 1440;
+  const imgCache = {};
+  const loadImg = (src) => imgCache[src] || (imgCache[src] = new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }));
+  const FONT = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Hiragino Sans GB",system-ui,sans-serif';
+  const SERIF = '"Songti SC","Noto Serif SC","Source Han Serif SC","STSong",serif';
+  function wrap(ctx, text, maxW) {
+    const out = [];
+    let line = '';
+    for (const ch of Array.from(String(text))) {
+      const t = line + ch;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = ch.trim() ? ch : ''; } else line = t;
+    }
+    if (line) out.push(line);
+    return out;
+  }
+  function drawText(ctx, text, x, y, maxW, lh, maxLines) {
+    let lines = wrap(ctx, text, maxW);
+    if (maxLines && lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = lines[maxLines - 1].replace(/.$/, '…'); }
+    lines.forEach((l, i) => ctx.fillText(l, x, y + i * lh));
+    return y + lines.length * lh;
+  }
+  function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function bg(ctx, c1, c2) {
+    const g = ctx.createLinearGradient(0, 0, W, HGT);
+    g.addColorStop(0, c1); g.addColorStop(1, c2);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, HGT);
+    // 纸纹
+    ctx.globalAlpha = 0.06; ctx.fillStyle = '#fff';
+    for (let i = 0; i < 40; i++) ctx.fillRect(0, i * 36, W, 1);
+    ctx.globalAlpha = 1;
+  }
+  function paper(ctx, x, y, w, h) { ctx.fillStyle = 'rgba(255,252,245,0.96)'; rr(ctx, x, y, w, h, 36); ctx.fill(); }
+  function qr(ctx, text, x, y, size) {
+    if (typeof qrcode !== 'function') return;
+    const q = qrcode(0, 'M'); q.addData(text); q.make();
+    const n = q.getModuleCount(), cell = size / (n + 2);
+    ctx.fillStyle = '#fff'; ctx.fillRect(x, y, size, size);
+    ctx.fillStyle = '#111';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) ctx.fillRect(x + (c + 1) * cell, y + (r + 1) * cell, Math.ceil(cell), Math.ceil(cell));
+  }
+  function header(ctx, s, idx, total) {
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = `600 30px ${FONT}`; ctx.textBaseline = 'top';
+    ctx.fillText(`${tx('模拟人生', 'Life Simulator')} · ${s.c.flag} ${s.name}`, 64, 56);
+    ctx.textAlign = 'right'; ctx.fillText(`${idx} / ${total}`, W - 64, 56); ctx.textAlign = 'left';
+  }
+  async function footer(ctx, withQr) {
+    ctx.textBaseline = 'alphabetic';
+    if (withQr) {
+      qr(ctx, SHARE_URL(), W - 64 - 180, HGT - 64 - 180, 180);
+      ctx.fillStyle = '#3a3a3a'; ctx.font = `700 34px ${FONT}`;
+      ctx.fillText(tx('你会出生在哪里？', 'Where would you be born?'), 96, HGT - 214);
+      ctx.font = `400 26px ${FONT}`; ctx.fillStyle = '#666';
+      ctx.fillText(tx('扫码来一段人生 · 模拟人生', 'Scan to live a life'), 96, HGT - 172);
+      const logo = await loadImg('assets/zenmatrix-logo.jpg');
+      if (logo) ctx.drawImage(logo, 96, HGT - 150, 130, 130 * logo.height / logo.width);
+      ctx.fillStyle = '#888'; ctx.font = `400 22px ${FONT}`; ctx.fillText('www.zenmatrix.org', 240, HGT - 104);
+    } else {
+      const coin = await loadImg('assets/zenmatrix-coin.png');
+      if (coin) ctx.drawImage(coin, 64, HGT - 76, 36, 36);
+      ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.font = `400 24px ${FONT}`;
+      ctx.fillText(`${tx('模拟人生', 'Life Simulator')} · ZenMatrix`, coin ? 110 : 64, HGT - 48);
+    }
+  }
+  async function drawImageCover(ctx, src, x, y, w, h, r) {
+    const im = await loadImg(src);
+    if (!im) return;
+    ctx.save(); rr(ctx, x, y, w, h, r); ctx.clip();
+    const sc = Math.max(w / im.width, h / im.height);
+    ctx.drawImage(im, x + (w - im.width * sc) / 2, y + (h - im.height * sc) / 2, im.width * sc, im.height * sc);
+    ctx.restore();
+  }
+  function eventList(ctx, evs, x, y, w, maxY) {
+    ctx.textBaseline = 'top';
+    for (const e of evs) {
+      if (y > maxY - 60) break;
+      ctx.fillStyle = '#8C1D3C'; ctx.font = `700 30px ${FONT}`;
+      ctx.fillText(`${e.age}${tx('岁', '')}`, x, y);
+      ctx.font = `400 34px ${FONT}`; ctx.fillStyle = '#2a2a2a';
+      y = drawText(ctx, `${e.icon || '·'} ${e.text}`, x + 96, y - 2, w - 96, 48, 3) + 22;
+    }
+    return y;
+  }
+  function miniChart(ctx, life, x, y, w, h) {
+    const ys = yearly(life);
+    ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 2;
+    for (let i = 0; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(x, y + h * i / 4); ctx.lineTo(x + w, y + h * i / 4); ctx.stroke(); }
+    if (ys.length < 2) return;
+    const maxA = Math.max(ys[ys.length - 1].age, 1);
+    const series = [['h', '#2B9A5E'], ['hp', '#E07A2E'], ['k', '#3B6FD4'], ['so', '#9B4FD1']];
+    for (const [key, color] of series) {
+      const pts = ys.filter(p => p[key] != null);
+      if (pts.length < 2) continue;
+      ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.lineJoin = 'round'; ctx.beginPath();
+      pts.forEach((p, i) => { const px = x + p.age / maxA * w, py = y + h - Math.max(0, Math.min(100, p[key])) / 100 * h; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+      ctx.stroke();
+    }
+  }
+
+  /* ---------------- 9 张图 ---------------- */
+  async function makePhotos(life) {
+    const s = summary(life);
+    const stages = STAGES.filter(st => st.min <= s.age && allStageEvents(life, st).length);
+    const plan = ['cover', 'birth', ...stages.map(st => st.id), 'data', 'end'].slice(0, 9);
+    const total = plan.length;
+    const out = [];
+    for (let i = 0; i < plan.length; i++) {
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = HGT;
+      const ctx = cv.getContext('2d');
+      const kind = plan[i];
+      const st = STAGES.find(x => x.id === kind);
+      if (kind === 'cover') {
+        bg(ctx, '#1d2b4a', '#8C1D3C');
+        header(ctx, s, i + 1, total);
+        await drawImageCover(ctx, 'assets/illus-world-people.jpg', 64, 130, W - 128, 640, 40);
+        paper(ctx, 64, 810, W - 128, 566);
+        ctx.textBaseline = 'top'; ctx.fillStyle = '#8C1D3C'; ctx.font = `600 32px ${FONT}`;
+        ctx.fillText(tx('这一生', 'This life'), 112, 860);
+        ctx.fillStyle = '#1a1a1a'; ctx.font = `700 84px ${SERIF}`;
+        drawText(ctx, s.name, 112, 910, W - 224, 96, 2);
+        ctx.font = `400 40px ${FONT}`; ctx.fillStyle = '#333';
+        ctx.fillText(`${s.c.flag} ${s.loc.name} · ${fmtBirth(life)} – ${s.dy} · ${s.age} ${tx('岁', 'years')}`, 112, 1110);
+        if (s.r) {
+          ctx.fillStyle = s.r.tier.color; rr(ctx, 112, 1180, 150, 64, 14); ctx.fill();
+          ctx.fillStyle = '#fff'; ctx.font = `800 40px ${FONT}`; ctx.fillText(s.r.tier.id, 132, 1190);
+          ctx.fillStyle = '#444'; ctx.font = `400 30px ${FONT}`;
+          ctx.fillText(tx(`全球每 1 万个新生儿只有 ${s.r.per10k >= 10 ? Math.round(s.r.per10k) : s.r.per10k.toFixed(1)} 个出生在这里`, `${s.r.per10k.toFixed(1)} in 10,000 newborns are born here`), 286, 1196);
+        }
+        await footer(ctx, false);
+      } else if (kind === 'birth') {
+        bg(ctx, '#f3d9b1', '#e7b07a');
+        header(ctx, s, i + 1, total);
+        await drawImageCover(ctx, 'assets/illus-baby-book.jpg', 64, 130, W - 128, 520, 40);
+        paper(ctx, 64, 690, W - 128, 686);
+        ctx.textBaseline = 'top'; ctx.fillStyle = '#8C1D3C'; ctx.font = `700 56px ${SERIF}`;
+        ctx.fillText(tx('出生登记', 'Birth record'), 112, 740);
+        const fam = life.family || {};
+        const father = (fam.parents || []).find(p => p.sex === 'M'), mother = (fam.parents || []).find(p => p.sex === 'F');
+        const rows = [
+          [tx('出生', 'Born'), `${fmtBirth(life)} · ${s.c.flag} ${s.loc.name}`],
+          [tx('性别', 'Sex'), s.sex + (s.eth ? ` · ${s.eth}` : '')],
+          [tx('出生地', 'Place'), life.stats?.birthPlaceType === 'rural' ? tx('乡村', 'Rural') : tx('城市', 'Urban')],
+          [tx('家境', 'Household'), `Q${life.stats?.incomeQuartile || 2} / 4`],
+          [tx('父亲', 'Father'), father ? father.name : '—'],
+          [tx('母亲', 'Mother'), mother ? mother.name : '—'],
+          [tx('预期寿命', 'Life expectancy'), `${s.c.le} ${tx('岁', 'years')}`],
+        ];
+        let y = 840;
+        for (const [k, v] of rows) {
+          ctx.fillStyle = '#888'; ctx.font = `400 30px ${FONT}`; ctx.fillText(k, 112, y);
+          ctx.fillStyle = '#222'; ctx.font = `600 34px ${FONT}`; drawText(ctx, v, 330, y - 2, W - 440, 42, 1);
+          y += 70;
+        }
+        await footer(ctx, false);
+      } else if (st) {
+        bg(ctx, st.color[0], st.color[1]);
+        header(ctx, s, i + 1, total);
+        let top = 130;
+        if (st.img) { await drawImageCover(ctx, st.img, 64, 130, W - 128, 420, 40); top = 590; }
+        else {
+          ctx.font = `200px ${FONT}`; ctx.textBaseline = 'top'; ctx.fillText(st.icon, 64, 150);
+          ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = `700 120px ${SERIF}`; ctx.fillText(tx(st.zh, st.en), 330, 180);
+          ctx.font = `400 40px ${FONT}`; ctx.fillText(`${st.min} – ${Math.min(st.max, s.age)} ${tx('岁', 'years')}`, 336, 330);
+          top = 470;
+        }
+        paper(ctx, 64, top, W - 128, HGT - top - 110);
+        ctx.textBaseline = 'top';
+        if (st.img) {
+          ctx.fillStyle = '#8C1D3C'; ctx.font = `700 60px ${SERIF}`; ctx.fillText(`${st.icon} ${tx(st.zh, st.en)}`, 112, top + 44);
+          ctx.fillStyle = '#888'; ctx.font = `400 32px ${FONT}`; ctx.fillText(`${st.min} – ${Math.min(st.max, s.age)} ${tx('岁', 'years')}`, 112 + ctx.measureText('').width + 420, top + 64);
+        }
+        eventList(ctx, stageEvents(life, st, st.img ? 4 : 6), 112, top + (st.img ? 150 : 60), W - 224, HGT - 130);
+        await footer(ctx, false);
+      } else if (kind === 'data') {
+        bg(ctx, '#203a43', '#2c5364');
+        header(ctx, s, i + 1, total);
+        paper(ctx, 64, 130, W - 128, HGT - 240);
+        ctx.textBaseline = 'top'; ctx.fillStyle = '#8C1D3C'; ctx.font = `700 60px ${SERIF}`;
+        ctx.fillText(tx('一生的轨迹', 'The shape of a life'), 112, 180);
+        miniChart(ctx, life, 112, 300, W - 224, 420);
+        const legend = [[tx('健康', 'Health'), '#2B9A5E'], [tx('幸福', 'Happiness'), '#E07A2E'], [tx('知识', 'Knowledge'), '#3B6FD4'], [tx('人际', 'Social'), '#9B4FD1']];
+        legend.forEach(([n, c], k) => { ctx.fillStyle = c; ctx.fillRect(112 + k * 220, 760, 40, 14); ctx.fillStyle = '#444'; ctx.font = `400 28px ${FONT}`; ctx.fillText(n, 162 + k * 220, 748); });
+        const st2 = life.stats || {};
+        const nums = [[tx('最终健康', 'Health'), Math.round(st2.health || 0)], [tx('最终幸福', 'Happiness'), Math.round(st2.happiness || 0)], [tx('最终知识', 'Knowledge'), Math.round(st2.knowledge || 0)], [tx('最终人际', 'Social'), Math.round(st2.social || 0)], [tx('净资产 (US$)', 'Net worth (US$)'), Math.round(st2.netAssets || 0).toLocaleString()], [tx('做过的抉择', 'Choices made'), choiceRows(life).length]];
+        nums.forEach(([k, v], j) => {
+          const cx = 112 + (j % 2) * 440, cy = 840 + Math.floor(j / 2) * 150;
+          ctx.fillStyle = '#888'; ctx.font = `400 28px ${FONT}`; ctx.fillText(k, cx, cy);
+          ctx.fillStyle = '#1a1a1a'; ctx.font = `700 60px ${FONT}`; ctx.fillText(String(v), cx, cy + 40);
+        });
+        await footer(ctx, false);
+      } else if (kind === 'end') {
+        bg(ctx, '#2b2235', '#4b3b5c');
+        header(ctx, s, i + 1, total);
+        await drawImageCover(ctx, 'assets/illus-memorial-lantern.jpg', 64, 130, W - 128, 460, 40);
+        paper(ctx, 64, 630, W - 128, 746);
+        ctx.textBaseline = 'top'; ctx.fillStyle = '#8C1D3C'; ctx.font = `700 60px ${SERIF}`;
+        ctx.fillText(tx('这一段人生走完了', 'This life has ended'), 112, 680);
+        ctx.fillStyle = '#333'; ctx.font = `400 36px ${FONT}`;
+        ctx.fillText(`${s.age} ${tx('岁', 'years')}${s.cause ? ' · ' + s.cause : ''}`, 112, 770);
+        const quotes = Object.entries(life.quotes || {}).filter(([, q]) => q && !/自動|自动|auto/i.test(q));
+        let y = 850;
+        if (quotes.length) {
+          const [qa, qq] = quotes[quotes.length - 1];
+          ctx.fillStyle = '#555'; ctx.font = `italic 400 34px ${SERIF}`;
+          y = drawText(ctx, `「${qq}」—— ${qa} ${tx('岁', 'y/o')}`, 112, y, W - 224, 48, 3) + 20;
+        } else {
+          const last = stageEvents(life, { min: Math.max(0, s.age - 15), max: s.age }, 1)[0];
+          if (last) { ctx.fillStyle = '#555'; ctx.font = `400 32px ${FONT}`; y = drawText(ctx, `${tx('最后的时刻', 'Last moment')}：${last.text}`, 112, y, W - 224, 46, 3) + 20; }
+        }
+        const ach = (life._fun?.fresh || []).map(id => (BornFun.ACHV || []).find(a => a.id === id)).filter(Boolean);
+        if (ach.length) { ctx.fillStyle = '#7a5a00'; ctx.font = `600 30px ${FONT}`; drawText(ctx, `🏆 ${ach.map(a => a.icon + ' ' + tx(a.zh, a.en)).join('  ')}`, 112, y, W - 224, 44, 2); }
+        await footer(ctx, true);
+      }
+      out.push(cv);
+    }
+    return out;
+  }
+  const toBlob = (cv) => new Promise(res => cv.toBlob(b => res(b), 'image/jpeg', 0.9));
+  function caption(life) {
+    const s = summary(life);
+    const n = (current && current.life === life && current.photos) ? current.photos.length : 9;
+    const per = s.r ? (s.r.per10k >= 10 ? Math.round(s.r.per10k) : s.r.per10k.toFixed(1)) : '';
+    return tx(
+      `我在《模拟人生》里出生在${s.c.flag}${s.loc.name}${s.r ? `（${s.r.tier.id}，全球每 1 万个新生儿只有 ${per} 个）` : ''}，活到了 ${s.age} 岁。这一生的 ${n} 个片段 ↓ 你会出生在哪里？👉 ${SHARE_URL()}`,
+      `In Life Simulator I was born in ${s.c.flag} ${s.loc.name}${s.r ? ` (${s.r.tier.id})` : ''} and lived to ${s.age}. Where would you be born? 👉 ${SHARE_URL()}`
+    );
+  }
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch (e) {
+      const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      ta.remove(); return ok;
+    }
+  }
+  function downloadBlob(blob, name) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  const fileBase = (life) => `${(life.name?.full_en || life.name?.full || 'life').replace(/[^\w一-鿿-]+/g, '_')}_${life.country}`;
+
+  /* ---------------- 珍藏视窗 ---------------- */
+  let current = null;   // { life, photos: [canvas], blobs: [Blob] }
+  function modal() {
+    let m = $('#ksModal');
+    if (!m) {
+      m = document.createElement('div'); m.id = 'ksModal'; m.className = 'modal fun-modal';
+      m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-ks-close]')) m.hidden = true; });
+      document.body.appendChild(m);
+    }
+    return m;
+  }
+  async function openKeepsake(which) {
+    const lives = pickLives();
+    const m = modal();
+    if (!lives.length) {
+      m.innerHTML = `<div class="modal-card fun-card ks-card"><div class="fun-card-head"><h3>🎁 ${tx('珍藏这段人生', 'Keepsakes')}</h3><button class="ghost" data-ks-close>✕</button></div><p>${tx('先走完一段人生，才能用它做珍藏。', 'Finish a life first, then turn it into keepsakes.')}</p></div>`;
+      m.hidden = false; return;
+    }
+    const sel = lives.find(l => l.key === which) || lives[0];
+    m.innerHTML = `<div class="modal-card fun-card ks-card">
+      <div class="fun-card-head"><h3>🎁 ${tx('珍藏这段人生', 'Keepsakes')}</h3><button class="ghost" data-ks-close>✕</button></div>
+      <label class="ks-pick">${tx('选择人生', 'Choose a life')}
+        <select id="ksLife" class="fun-eth-select">${lives.map(l => `<option value="${l.key}" ${l.key === sel.key ? 'selected' : ''}>${esc(H(l.label))}</option>`).join('')}</select></label>
+      <div class="ks-tabs">
+        <button class="ks-tab active" data-ks-tab="photos">📸 ${tx('照片组合 · 朋友圈', 'Photo set')}</button>
+        <button class="ks-tab" data-ks-tab="album">📖 ${tx('人生相簿 PDF', 'Album (PDF)')}</button>
+        <button class="ks-tab" data-ks-tab="record">📒 ${tx('人生纪录册', 'Record book')}</button>
+      </div>
+      <div id="ksBody" class="ks-body"></div>
+      <p class="muted ks-foot">${tx('全部在你的装置上制作，不会上传。', 'Everything is made on your device. Nothing is uploaded.')}</p>
+    </div>`;
+    m.hidden = false;
+    $('#ksLife', m).addEventListener('change', (e) => openKeepsake(e.target.value));
+    m.querySelectorAll('[data-ks-tab]').forEach(b => b.addEventListener('click', () => {
+      m.querySelectorAll('[data-ks-tab]').forEach(x => x.classList.toggle('active', x === b));
+      renderTab(b.dataset.ksTab);
+    }));
+    current = { key: sel.key, life: sel.life, photos: null, blobs: null };
+    renderTab('photos');
+  }
+  async function ensurePhotos() {
+    if (current.photos) return;
+    current.photos = await makePhotos(current.life);
+    current.blobs = await Promise.all(current.photos.map(toBlob));
+  }
+  async function renderTab(tab) {
+    const body = $('#ksBody');
+    if (!body || !current) return;
+    if (tab === 'photos') {
+      body.innerHTML = `<div class="ks-loading">${tx('正在制作照片⋯', 'Making photos…')}</div>`;
+      await ensurePhotos();
+      const wx = isWeChat();
+      const urls = current.photos.map(cv => cv.toDataURL('image/jpeg', 0.85));
+      const canFiles = (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([current.blobs[0]], 'a.jpg', { type: 'image/jpeg' })] })); } catch (e) { return false; } })();
+      body.innerHTML = `
+        <div class="ks-grid">${urls.map((u, i) => `<img src="${u}" alt="${i + 1}" data-ks-img="${i}" loading="lazy">`).join('')}</div>
+        <div class="ks-caption"><div class="ks-cap-k">${tx('朋友圈文案', 'Caption')}</div><div class="ks-cap-v" id="ksCap">${esc(H(caption(current.life)))}</div></div>
+        <div class="ks-actions">
+          <button class="primary" id="ksShareMoments" type="button">💚 ${tx('分享到微信朋友圈', 'Share to WeChat Moments')}</button>
+          <button class="ghost" id="ksCopyCap" type="button">📋 ${tx('复制文案', 'Copy caption')}</button>
+          ${wx ? '' : `<button class="ghost" id="ksDownloadAll" type="button">⬇️ ${tx(`下载 ${urls.length} 张图`, `Download ${urls.length} images`)}</button>`}
+        </div>
+        <div class="ks-how" id="ksHow" hidden></div>`;
+      const how = (html) => { const h = $('#ksHow'); h.innerHTML = html; h.hidden = false; };
+      $('#ksCopyCap').addEventListener('click', async () => { const ok = await copyText(H(caption(current.life))); toast(ok ? tx('文案已复制', 'Caption copied') : tx('复制失败，请手动选取', 'Copy failed')); });
+      $('#ksDownloadAll')?.addEventListener('click', () => { current.blobs.forEach((b, i) => setTimeout(() => downloadBlob(b, `${fileBase(current.life)}_${i + 1}.jpg`), i * 350)); track('keepsake_photos_download', { n: current.blobs.length }); });
+      $('#ksShareMoments').addEventListener('click', async () => {
+        const cap = H(caption(current.life));
+        await copyText(cap);
+        track('keepsake_share_moments', { via: wx ? 'wechat-browser' : canFiles ? 'share-sheet' : 'download' });
+        if (wx) {
+          how(`<b>${tx('在微信里发朋友圈：', 'In WeChat:')}</b><ol><li>${tx('长按上面每一张图 →「保存图片」', 'Long-press each image → Save')}</li><li>${tx(`回到微信「发现 → 朋友圈」，右上角相机 →「从相册选择」，按顺序选 ${current.photos.length} 张`, 'Moments → camera → choose the photos in order')}</li><li>${tx('文案已经复制好，直接贴上即可', 'The caption is copied — just paste')}</li></ol>`);
+          return;
+        }
+        if (canFiles) {
+          const files = current.blobs.map((b, i) => new File([b], `${fileBase(current.life)}_${i + 1}.jpg`, { type: 'image/jpeg' }));
+          try {
+            await navigator.share({ files, text: cap, title: tx('模拟人生', 'Life Simulator') });
+            how(tx('在分享选单选「微信」→「朋友圈」（文案已复制，可直接贴上）。', 'Pick WeChat → Moments in the share sheet. The caption is copied.'));
+            return;
+          } catch (e) { if (e && e.name === 'AbortError') return; }
+        }
+        current.blobs.forEach((b, i) => setTimeout(() => downloadBlob(b, `${fileBase(current.life)}_${i + 1}.jpg`), i * 350));
+        how(`<b>${tx('电脑上：', 'On a computer:')}</b> ${tx('9 张图已下载，文案已复制。把图片传到手机（例如「文件传输助手」），再到朋友圈按顺序发布。', 'The images are downloaded and the caption copied. Send them to your phone (e.g. WeChat File Transfer) and post them to Moments in order.')}`);
+      });
+      body.querySelectorAll('[data-ks-img]').forEach(im => im.addEventListener('click', () => { if (!wx) window.open(im.src, '_blank'); }));
+    } else if (tab === 'album') {
+      body.innerHTML = `<p>${tx('一本可以打印、也可以存成 PDF 的小书：封面、出生登记、每个人生阶段的完整纪录、做过的抉择、家人与结尾。', 'A printable book you can also save as PDF: cover, birth record, every stage of the life, choices, family and ending.')}</p>
+        <ol class="ks-steps"><li>${tx('按下「制作相簿」，会打开列印视窗', 'Press "Make album" to open the print dialog')}</li><li>${tx('目的地选「另存为 PDF」（建议纸张 A5 或 A4、开启背景图形）', 'Choose "Save as PDF" (A5/A4, background graphics on)')}</li></ol>
+        <div class="ks-actions"><button class="primary" id="ksAlbum" type="button">📖 ${tx('制作相簿', 'Make album')}</button><button class="ghost" id="ksAlbumHtml" type="button">⬇️ ${tx('下载相簿网页档', 'Download album HTML')}</button></div>
+        ${isWeChat() ? `<p class="ks-warn">${tx('微信内建浏览器不支援列印。请点右上角「⋯」→「在浏览器打开」，或先下载相簿网页档。', 'WeChat\'s browser cannot print. Open in your browser, or download the album HTML.')}</p>` : ''}`;
+      $('#ksAlbum').addEventListener('click', async () => { await ensurePhotos(); printAlbum(current.life, current.photos); track('keepsake_album', { mode: 'print' }); });
+      $('#ksAlbumHtml').addEventListener('click', async () => { await ensurePhotos(); downloadBlob(new Blob([albumHtml(current.life, current.photos, false)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_album.html`); track('keepsake_album', { mode: 'html' }); });
+    } else if (tab === 'record') {
+      const ys = yearly(current.life);
+      body.innerHTML = `<p>${tx('一个 HTML 档：逐年表格与图表、家人、做过的抉择与整段人生的纪录；另附逐年表格 CSV（可用 Excel / Numbers 打开）。', 'One HTML file with the yearly table and charts, family, choices and the full record, plus a CSV of the yearly table.')}</p>
+        <p class="muted">${tx(`逐年资料：${ys.length} 笔`, `Yearly rows: ${ys.length}`)}${current.life._yearly ? '' : tx('（这段人生来自旧版本，只有每 5 年的取样）', ' (older life — sampled every 5 years)')}</p>
+        <div class="ks-actions"><button class="primary" id="ksRecord" type="button">📒 ${tx('下载纪录册 HTML', 'Download record book')}</button><button class="ghost" id="ksCsv" type="button">📊 ${tx('下载逐年 CSV', 'Download yearly CSV')}</button></div>`;
+      $('#ksRecord').addEventListener('click', () => { downloadBlob(new Blob([recordHtml(current.life)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_record.html`); track('keepsake_record', { fmt: 'html' }); });
+      $('#ksCsv').addEventListener('click', () => { downloadBlob(new Blob(['﻿' + csv(current.life)], { type: 'text/csv;charset=utf-8' }), `${fileBase(current.life)}_yearly.csv`); track('keepsake_record', { fmt: 'csv' }); });
+    }
+  }
+
+  /* ---------------- 相簿（列印 / PDF） ---------------- */
+  function albumHtml(life, photos, forPrint) {
+    const s = summary(life);
+    const imgs = photos.map(cv => cv.toDataURL('image/jpeg', 0.88));
+    const stagePages = STAGES.filter(st => st.min <= s.age && allStageEvents(life, st).length).map(st => {
+      const evs = allStageEvents(life, st);
+      const photoIdx = 2 + STAGES.filter(x => x.min <= s.age && allStageEvents(life, x).length).indexOf(st);
+      return `<section class="pg"><div class="plate"><img src="${imgs[photoIdx] || ''}" alt=""></div></section>
+      <section class="pg text"><h2>${st.icon} ${esc(tx(st.zh, st.en))} <small>${st.min}–${Math.min(st.max, s.age)} ${tx('岁', 'years')}</small></h2>
+      <ul class="ev">${evs.map(e => `<li><b>${e.age}</b><span>${esc(e.icon || '·')} ${esc(H(e.text))}</span></li>`).join('')}</ul></section>`;
+    }).join('');
+    const choices = choiceRows(life), fam = familyRows(life);
+    return `<!doctype html><html lang="${esc(LANG)}"><head><meta charset="utf-8"><title>${esc(H(s.name))} · ${tx('人生相簿', 'Life album')}</title>
+<style>
+@page { size: A5; margin: 12mm; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif; color: #222; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pg { page-break-after: always; break-after: page; min-height: 180mm; padding: 0; }
+.plate { display: flex; justify-content: center; } .plate img { max-width: 100%; max-height: 182mm; border-radius: 6mm; }
+h1 { font-family: "Songti SC","Noto Serif SC",serif; font-size: 26pt; margin: 6mm 0 2mm; color: #8C1D3C; }
+h2 { font-family: "Songti SC","Noto Serif SC",serif; font-size: 18pt; color: #8C1D3C; border-bottom: 1px solid #e5d9c5; padding-bottom: 2mm; }
+h2 small { font-size: 10pt; color: #888; font-family: sans-serif; }
+.meta { color: #555; font-size: 11pt; line-height: 1.7; }
+.ev { list-style: none; padding: 0; margin: 0; font-size: 10.5pt; line-height: 1.55; }
+.ev li { display: grid; grid-template-columns: 9mm 1fr; gap: 3mm; padding: 1.2mm 0; border-bottom: 1px dotted #eee; break-inside: avoid; }
+.ev b { color: #8C1D3C; }
+table { width: 100%; border-collapse: collapse; font-size: 10.5pt; } td { padding: 1.5mm 2mm; border-bottom: 1px solid #eee; vertical-align: top; }
+.end { text-align: center; } .end p { color: #555; }
+.colophon { font-size: 9pt; color: #999; text-align: center; margin-top: 10mm; }
+@media screen { body { max-width: 160mm; margin: 0 auto; padding: 10mm; background: #f4f1eb; } .pg { background: #fff; padding: 10mm; margin-bottom: 8mm; box-shadow: 0 2px 10px rgba(0,0,0,.08); } }
+</style></head><body>
+<section class="pg"><div class="plate"><img src="${imgs[0]}" alt=""></div></section>
+<section class="pg text"><h1>${esc(H(s.name))}</h1><p class="meta">${s.c.flag} ${esc(H(s.loc.name))} · ${fmtBirth(life)} – ${s.dy} · ${s.age} ${tx('岁', 'years')}${s.r ? ` · ${s.r.tier.id}` : ''}<br>${esc(s.sex)}${s.eth ? ' · ' + esc(s.eth) : ''}${s.cause ? ' · ' + esc(H(s.cause)) : ''}</p>
+<div class="plate"><img src="${imgs[1]}" alt=""></div></section>
+${stagePages}
+${choices.length ? `<section class="pg text"><h2>⚖️ ${tx('做过的抉择', 'Choices')}</h2><table>${choices.map(c => `<tr><td><b>${c.age}</b></td><td>${esc(H(c.title))}${c.note ? `<br><small>${esc(H(c.note))}</small>` : ''}</td></tr>`).join('')}</table></section>` : ''}
+${fam.length ? `<section class="pg text"><h2>👪 ${tx('家人', 'Family')}</h2><table>${fam.map(f => `<tr><td>${esc(f.rel)}</td><td>${esc(H(f.name))}</td></tr>`).join('')}</table></section>` : ''}
+<section class="pg"><div class="plate"><img src="${imgs[imgs.length - 2] || ''}" alt=""></div></section>
+<section class="pg end"><div class="plate"><img src="${imgs[imgs.length - 1]}" alt=""></div>
+<p class="colophon">${tx('本相簿由《模拟人生》在你的装置上生成 · 人生为虚构模拟 · ZenMatrix · www.zenmatrix.org', 'Made on your device by Life Simulator · A fictional simulation · ZenMatrix · www.zenmatrix.org')}</p></section>
+${forPrint ? '<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},300);};<\/script>' : ''}
+</body></html>`;
+  }
+  function printAlbum(life, photos) {
+    const html = albumHtml(life, photos, false);
+    let fr = $('#ksPrintFrame');
+    if (fr) fr.remove();
+    fr = document.createElement('iframe');
+    fr.id = 'ksPrintFrame';
+    fr.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;';
+    document.body.appendChild(fr);
+    fr.onload = () => { setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { window.open(URL.createObjectURL(new Blob([albumHtml(life, photos, true)], { type: 'text/html' })), '_blank'); } }, 400); };
+    fr.srcdoc = html;
+  }
+
+  /* ---------------- 纪录册 HTML + CSV ---------------- */
+  const EMP = { none: ['—', '—'], student: ['学生', 'Student'], university: ['大学', 'University'], employed: ['就业', 'Employed'], family_biz: ['家族事业', 'Family business'], retired: ['退休', 'Retired'], unemployed: ['失业', 'Unemployed'] };
+  const empLabel = (e) => e ? tx(...(EMP[e] || [e, e])) : '';
+  function eventsByAge(life) {
+    const m = {};
+    (life.log || []).forEach(e => { if (e && e.text) (m[e.age] = m[e.age] || []).push(H(e.text)); });
+    return m;
+  }
+  function csv(life) {
+    const ys = yearly(life), ev = eventsByAge(life), { by } = lifeYears(life);
+    const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = isZh() ? ['年龄', '年份', '健康', '幸福', '知识', '人际', '净资产_US$', '状态', '已婚', '孩子数', '这一年的事件'] : ['age', 'year', 'health', 'happiness', 'knowledge', 'social', 'net_assets_usd', 'status', 'married', 'children', 'events'];
+    const rows = ys.map(y => [y.age, by + y.age, y.h, y.hp ?? '', y.k, y.so, y.m ?? '', empLabel(y.emp), y.mar == null ? '' : (y.mar ? 1 : 0), y.kids ?? '', (ev[y.age] || []).join(' / ')]);
+    return [head, ...rows].map(r => r.map(q).join(',')).join('\r\n');
+  }
+  function svgChart(life) {
+    const ys = yearly(life);
+    if (ys.length < 2) return '';
+    const w = 760, h = 260, maxA = Math.max(ys[ys.length - 1].age, 1);
+    const line = (key, color) => { const pts = ys.filter(p => p[key] != null); if (pts.length < 2) return ''; return `<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${pts.map(p => `${(40 + p.age / maxA * (w - 60)).toFixed(1)},${(h - 30 - Math.max(0, Math.min(100, p[key])) / 100 * (h - 50)).toFixed(1)}`).join(' ')}"/>`; };
+    const grid = [0, 25, 50, 75, 100].map(v => `<line x1="40" x2="${w - 20}" y1="${h - 30 - v / 100 * (h - 50)}" y2="${h - 30 - v / 100 * (h - 50)}" stroke="#eee"/><text x="34" y="${h - 26 - v / 100 * (h - 50)}" font-size="10" text-anchor="end" fill="#999">${v}</text>`).join('');
+    const ticks = Array.from({ length: 6 }, (_, i) => Math.round(maxA * i / 5)).map(a => `<text x="${40 + a / maxA * (w - 60)}" y="${h - 10}" font-size="10" text-anchor="middle" fill="#999">${a}</text>`).join('');
+    const money = ys.filter(p => p.m != null);
+    let moneyChart = '';
+    if (money.length > 1) {
+      const mx = Math.max(...money.map(p => p.m), 1), mn = Math.min(...money.map(p => p.m), 0);
+      moneyChart = `<svg viewBox="0 0 ${w} 180" role="img" aria-label="net worth"><polyline fill="none" stroke="#b8860b" stroke-width="2.5" points="${money.map(p => `${(40 + p.age / maxA * (w - 60)).toFixed(1)},${(150 - (p.m - mn) / (mx - mn || 1) * 130).toFixed(1)}`).join(' ')}"/><text x="40" y="14" font-size="11" fill="#999">${tx('净资产（US$）最高', 'Net worth max')} ${Math.round(mx).toLocaleString()}</text></svg>`;
+    }
+    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="stats">${grid}${ticks}${line('h', '#2B9A5E')}${line('hp', '#E07A2E')}${line('k', '#3B6FD4')}${line('so', '#9B4FD1')}</svg>
+      <p class="legend"><i style="background:#2B9A5E"></i>${tx('健康', 'Health')} <i style="background:#E07A2E"></i>${tx('幸福', 'Happiness')} <i style="background:#3B6FD4"></i>${tx('知识', 'Knowledge')} <i style="background:#9B4FD1"></i>${tx('人际', 'Social')}</p>${moneyChart}`;
+  }
+  function recordHtml(life) {
+    const s = summary(life), ys = yearly(life), ev = eventsByAge(life), { by } = lifeYears(life);
+    const choices = choiceRows(life), fam = familyRows(life);
+    const quotes = Object.entries(life.quotes || {}).filter(([, q]) => q);
+    return `<!doctype html><html lang="${esc(LANG)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(H(s.name))} · ${tx('人生纪录册', 'Life record')}</title>
+<style>
+:root { --ink:#1f1f1f; --mute:#777; --line:#e6e0d4; --accent:#8C1D3C; --bg:#faf7f0; }
+@media (prefers-color-scheme: dark) { :root { --ink:#e8e6e1; --mute:#a5a29a; --line:#333; --accent:#e2678a; --bg:#151515; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 "PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif; }
+main { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+h1 { color: var(--accent); margin: 0 0 4px; font-family: "Songti SC","Noto Serif SC",serif; font-size: 32px; }
+h2 { color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-top: 36px; }
+.meta { color: var(--mute); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 10px; margin: 16px 0; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; } .card b { display: block; font-size: 22px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { position: sticky; top: 0; background: var(--bg); }
+td.n { text-align: right; font-variant-numeric: tabular-nums; }
+svg { width: 100%; height: auto; }
+.legend i { display: inline-block; width: 14px; height: 4px; margin: 0 4px 2px 10px; vertical-align: middle; }
+.log li { margin: 2px 0; } .log b { color: var(--accent); display: inline-block; min-width: 3em; }
+footer { color: var(--mute); font-size: 12px; margin-top: 40px; text-align: center; }
+a { color: var(--accent); }
+</style></head><body><main>
+<h1>${esc(H(s.name))}</h1>
+<p class="meta">${s.c.flag} ${esc(H(s.loc.name))} · ${fmtBirth(life)} – ${s.dy} · ${s.age} ${tx('岁', 'years')} · ${esc(s.sex)}${s.eth ? ' · ' + esc(s.eth) : ''}${s.cause ? ' · ' + esc(H(s.cause)) : ''} · ${tx('登记编号', 'Reg.')} ${esc(life.regNumber || '')}</p>
+<div class="cards">
+ <div class="card">${tx('稀有度', 'Rarity')}<b>${s.r ? s.r.tier.id : '—'}</b></div>
+ <div class="card">${tx('出生运气', 'Birth luck')}<b>${window.BornFun ? BornFun.luck(s.c).score : '—'}</b></div>
+ <div class="card">${tx('当地预期寿命', 'Life expectancy')}<b>${s.c.le}</b></div>
+ <div class="card">${tx('实际寿命', 'Lived')}<b>${s.age}</b></div>
+ <div class="card">${tx('净资产 US$', 'Net worth US$')}<b>${Math.round(life.stats?.netAssets || 0).toLocaleString()}</b></div>
+ <div class="card">${tx('抉择', 'Choices')}<b>${choices.length}</b></div>
+</div>
+<h2>📈 ${tx('一生的轨迹', 'Trajectory')}</h2>
+${svgChart(life) || `<p class="meta">${tx('资料不足以画图。', 'Not enough data to chart.')}</p>`}
+<h2>📅 ${tx('逐年表格', 'Year by year')}</h2>
+<div class="scroll"><table><thead><tr><th>${tx('年龄', 'Age')}</th><th>${tx('年份', 'Year')}</th><th>${tx('健康', 'Health')}</th><th>${tx('幸福', 'Happy')}</th><th>${tx('知识', 'Know.')}</th><th>${tx('人际', 'Social')}</th><th>${tx('净资产', 'Net worth')}</th><th>${tx('状态', 'Status')}</th><th>${tx('这一年', 'This year')}</th></tr></thead><tbody>
+${ys.map(y => `<tr><td class="n">${y.age}</td><td class="n">${by + y.age}</td><td class="n">${y.h ?? ''}</td><td class="n">${y.hp ?? ''}</td><td class="n">${y.k ?? ''}</td><td class="n">${y.so ?? ''}</td><td class="n">${y.m == null ? '' : Math.round(y.m).toLocaleString()}</td><td>${esc(empLabel(y.emp))}${y.mar ? ' · ' + tx('已婚', 'married') : ''}${y.kids ? ' · ' + y.kids + tx('孩', ' kids') : ''}</td><td>${(ev[y.age] || []).map(esc).join('<br>')}</td></tr>`).join('')}
+</tbody></table></div>
+${fam.length ? `<h2>👪 ${tx('家人', 'Family')}</h2><table>${fam.map(f => `<tr><td>${esc(f.rel)}</td><td>${esc(H(f.name))}</td><td>${esc(f.note)}</td></tr>`).join('')}</table>` : ''}
+${choices.length ? `<h2>⚖️ ${tx('做过的抉择', 'Choices')}</h2><table>${choices.map(c => `<tr><td class="n">${c.age}</td><td><b>${esc(H(c.title))}</b>${c.note ? `<br>${esc(H(c.note))}` : ''}</td></tr>`).join('')}</table>` : ''}
+${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${quotes.map(([a, q]) => `<li><b>${a}</b> ${esc(H(q))}</li>`).join('')}</ul>` : ''}
+<h2>📜 ${tx('整段人生的纪录', 'The full record')}</h2>
+<ul class="log">${(life.log || []).filter(e => e && e.text).map(e => `<li><b>${e.age}</b> ${esc(e.icon || '·')} ${esc(H(e.text))}</li>`).join('')}</ul>
+<footer>${tx('本纪录册由《模拟人生》在你的装置上生成；人生为依统计资料的虚构模拟，不代表任何真实个人。', 'Made on your device by Life Simulator. A fictional, statistics-based simulation.')}<br><a href="${esc(SITE())}">${esc(SITE())}</a> · ZenMatrix · <a href="https://www.zenmatrix.org/?utm_source=born-somewhere&amp;utm_medium=referral&amp;utm_campaign=record">www.zenmatrix.org</a></footer>
+</main></body></html>`;
+  }
+
+  /* ---------------- 入口：讣闻页 + 书架 ---------------- */
+  const _renderEnd = window.renderEnd;
+  window.renderEnd = function () {
+    _renderEnd.apply(this, arguments);
+    try {
+      const host = $('#funEndPanel') || $('#view-end');
+      if (!host || !STATE.life || !STATE.life.died) return;
+      $('#ksEndPanel')?.remove();
+      host.insertAdjacentHTML('afterend', `<div id="ksEndPanel" class="ks-end">
+        <div class="ks-end-t">🎁 ${tx('珍藏这段人生', 'Keep this life')}</div>
+        <div class="ks-end-btns">
+          <button class="primary" data-ks-open="photos" type="button">💚 ${tx('九宫格 · 发朋友圈', '9 photos · Moments')}</button>
+          <button class="ghost" data-ks-open="album" type="button">📖 ${tx('人生相簿 PDF', 'Album PDF')}</button>
+          <button class="ghost" data-ks-open="record" type="button">📒 ${tx('人生纪录册', 'Record book')}</button>
+        </div></div>`);
+    } catch (e) { /* ignore */ }
+  };
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest && e.target.closest('[data-ks-open]');
+    if (!b) return;
+    await openKeepsake('current');
+    const tab = b.dataset.ksOpen;
+    if (tab !== 'photos') $(`[data-ks-tab="${tab}"]`)?.click();
+    track('keepsake_open', { tab });
+  });
+  // 书架页：加「珍藏」入口（可选任一段前世纪录）
+  const _renderShelf = window.renderShelf;
+  if (typeof _renderShelf === 'function') {
+    window.renderShelf = function () {
+      _renderShelf.apply(this, arguments);
+      try {
+        const sh = $('#view-shelf');
+        if (sh && !$('#ksShelfBtn')) sh.insertAdjacentHTML('afterbegin', `<div class="ks-shelf"><button class="ghost" id="ksShelfBtn" data-ks-open="photos" type="button">🎁 ${tx('用前世纪录做珍藏（九宫格 / 相簿 / 纪录册）', 'Make keepsakes from past lives')}</button></div>`);
+      } catch (err) { /* ignore */ }
+    };
+  }
+
+  window.BornKeepsake = { openKeepsake, makePhotos, recordHtml, albumHtml, csv, caption };
+})();

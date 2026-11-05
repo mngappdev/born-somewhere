@@ -1271,10 +1271,10 @@
   const ZM_URL = (medium) => `https://www.zenmatrix.org/?utm_source=born-somewhere&utm_medium=referral&utm_campaign=${medium}`;
   function zmCard(medium) {
     return `<a class="fun-zm" href="${ZM_URL(medium)}" target="_blank" rel="noopener" data-zm="${medium}">
-      <span class="zm-logo" aria-hidden="true">ZM</span>
+      <span class="zm-logo"><img src="assets/zenmatrix-logo.jpg" alt="ZenMatrix" width="150" height="78" loading="lazy" decoding="async"></span>
       <span class="zm-body">
         <span class="zm-k">${tx('本游戏由 ZenMatrix 制作', 'Made by ZenMatrix')}</span>
-        <b class="zm-name">ZenMatrix · ${tx('平衡科技', 'Balance in Technology')}</b>
+        <b class="zm-name">${tx('平衡科技', 'Balance in Technology')}</b>
         <span class="zm-desc">${tx('云端、AI 与软件顾问 · ZenERP 云端会计 · Microsoft 授权 · 移动应用', 'Cloud, AI & software consulting · ZenERP cloud accounting · Microsoft licensing · Mobile apps')}</span>
       </span>
       <span class="zm-go">www.zenmatrix.org →</span>
@@ -1285,7 +1285,7 @@
     if (intro && !$('#funZmIntro')) { intro.insertAdjacentHTML('afterend', `<div id="funZmIntro">${zmCard('home')}</div>`); }
     else if ($('#funZmIntro')) $('#funZmIntro').innerHTML = zmCard('home');
     const footerLink = $('#funZmFooter');
-    if (footerLink) footerLink.textContent = `🏢 ${tx('ZenMatrix 出品', 'By ZenMatrix')} · www.zenmatrix.org`;
+    if (footerLink) footerLink.innerHTML = `<img class="zm-coin" src="assets/zenmatrix-coin.png" alt="" width="18" height="18">${esc(tx('ZenMatrix 出品', 'By ZenMatrix'))} · www.zenmatrix.org`;
   }
   const _ri4 = window.renderIntro;
   window.renderIntro = function () { _ri4.apply(this, arguments); try { renderZm(); } catch (e) { /* ignore */ } };
@@ -1316,5 +1316,5 @@
   else startHans();
 
   // 给测试 / 除错用
-  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
+  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
 })();

@@ -31,6 +31,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## qrcode-generator (MIT)
+
+`vendor/qrcode-generator.js`，Copyright (c) 2009 Kazuhiko Arase，授权见 `vendor/qrcode-generator-LICENSE.txt`。
+
 ## opencc-js (MIT)
 
 `vendor/opencc-t2cn.js`，授权见 `vendor/opencc-LICENSE.txt`。
