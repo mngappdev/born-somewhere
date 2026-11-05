@@ -5,7 +5,12 @@
 > **v5.89 → v6.09 的 21 個修正合併報告**：[`evidence/CONSOLIDATED-v5.89-v6.09.md`](evidence/CONSOLIDATED-v5.89-v6.09.md)
 > （每個缺陷的完整推導、原始數據與量測腳本都留有個別證據檔，連結如下）
 
-## v6.15 — 2026-11-05（目前）
+## v6.16 — 2026-11-05（目前）
+
+- 📊 **匿名访问统计（Azure Application Insights）**：页面浏览、国家／地区、装置，以及 life_start / life_end / chapter_choice / open_compare / open_wechat 等匿名游戏事件（只含国家代码、年龄、模式等栏位，不含姓名或自写文字）。只在正式网域载入；浏览器开启 Do Not Track / GPC 时不载入；隐私视窗可随时关闭。
+- 🔒 隐私政策（9 种语言）改写为实际做法：原本写「不写 cookie、不追踪」，现在说明两个匿名 cookie 与统计范围。
+
+## v6.15 — 2026-11-05
 
 **对齐原版 [1in8billion.live](https://github.com/juren056/1in8billion.live)（MIT，出处见 `ATTRIBUTIONS.md`）**
 - 📖 **人生篇章**：12 个按年龄出现的 3 选 1 篇章（修玩具、身边的空位、第一个兴趣、旧友来信、工作的界线、记忆盒⋯），选项标明影响，2 年与 8 年后会有回响；中、日、美、印、巴西、尼日利亚、法、台、港、新加坡 10 地有在地版本。自动抉择或快转时以默认选项处理。

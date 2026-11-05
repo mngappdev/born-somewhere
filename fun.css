@@ -176,3 +176,7 @@ html[lang="zh-Hans"] {
 .fc-tier { display: inline-block; padding: 0 8px; border-radius: 4px; background: var(--tier); color: #fff; font-family: var(--mono); }
 .fc-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .fc-src { font-size: 12px; margin-top: 10px; }
+
+/* v6.16：隐私视窗的统计开关 */
+.fun-optout { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); }
+.fun-optout input { margin-right: 6px; vertical-align: -2px; }

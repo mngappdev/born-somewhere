@@ -1183,6 +1183,87 @@
     }
   };
 
+  /* ------------------------------------------------------------------
+     13) v6.16：Azure Application Insights 匿名访问统计
+     - 只在正式网域载入（localhost / 档案开启不送）
+     - 尊重 Do Not Track / Global Privacy Control，以及隐私视窗里的「关闭统计」
+     - 不送姓名、自写文字、IP（App Insights 预设不存 IP，只推估国家/地区）
+     ------------------------------------------------------------------ */
+  const AI_CONN = 'InstrumentationKey=dd5128b5-1eb1-460d-abd3-ac1b33b93a5e;IngestionEndpoint=https://eastasia-0.in.applicationinsights.azure.com/;LiveEndpoint=https://eastasia.livediagnostics.monitor.azure.com/;ApplicationId=e5071cdd-79a1-4777-bf3b-91e86636ceac';
+  const AI_SDK = 'https://js.monitor.azure.com/scripts/b/ai.3.3.4.gbl.min.js';
+  const OPTOUT_KEY = 'born-somewhere-v2:analytics-optout';
+  let ai = null;
+  const aiQueue = [];
+  const optedOut = () => { try { return localStorage.getItem(OPTOUT_KEY) === '1'; } catch (e) { return false; } };
+  const browserSaysNo = () => navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl === true;
+  const analyticsAllowed = () => !optedOut() && !browserSaysNo() && /^https:$/.test(location.protocol) && !/^(localhost|127\.|\[::1\])/.test(location.hostname);
+  function track(name, props) {
+    if (!analyticsAllowed()) return;
+    const p = Object.assign({ lang: typeof LANG !== 'undefined' ? LANG : '' }, props || {});
+    if (ai) { try { ai.trackEvent({ name }, p); } catch (e) { /* ignore */ } } else if (aiQueue.length < 50) aiQueue.push([name, p]);
+  }
+  function loadAnalytics() {
+    if (ai || !analyticsAllowed()) return;
+    const s = document.createElement('script');
+    s.src = AI_SDK; s.async = true; s.crossOrigin = 'anonymous';
+    s.onload = () => {
+      try {
+        const NS = window.Microsoft && window.Microsoft.ApplicationInsights;
+        if (!NS) return;
+        ai = new NS.ApplicationInsights({ config: {
+          connectionString: AI_CONN,
+          disableAjaxTracking: true, disableFetchTracking: true,   // 只要页面与游戏事件，不追踪资料请求
+          enableAutoRouteTracking: false, disableExceptionTracking: false,
+          samplingPercentage: 100,
+        } });
+        ai.loadAppInsights();
+        ai.addTelemetryInitializer((env) => { env.data = env.data || {}; env.data.lang = typeof LANG !== 'undefined' ? LANG : ''; env.data.app = APP_VERSION; });
+        ai.trackPageView({ name: 'home' });
+        aiQueue.splice(0).forEach(([n, p]) => ai.trackEvent({ name: n }, p));
+      } catch (e) { ai = null; }
+    };
+    document.head.appendChild(s);
+  }
+  window.addEventListener('load', () => setTimeout(loadAnalytics, 1200));
+  // 游戏事件（只含国家代码、模式、年龄等匿名栏位）
+  const _startLife3 = window.startLife;
+  window.startLife = function (code) {
+    _startLife3.apply(this, arguments);
+    const L = STATE.life;
+    if (L) track('life_start', { country: L.country, pick: STATE.birthPick, sex: L.sex, ethnicity: L.ethnicity || 'auto', era: STATE.era, rarity: rarity(L.countryData).tier.id });
+  };
+  const _die3 = window.dieNow;
+  window.dieNow = function () {
+    const L = STATE.life;
+    const alive = L && !L.died;
+    _die3.apply(this, arguments);
+    if (alive && L.died) track('life_end', { country: L.country, age: L.deathAge, chapters: Object.keys(L._story?.done || {}).length, dailyOk: !!L._fun?.dailyOk, newAchievements: (L._fun?.fresh || []).length });
+  };
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest && e.target.closest('[data-fun-compare],[data-fun-wechat],[data-fun-achv],#btnLifeMusic,#funFeedbackMail,#btnContact,.fs-opt');
+    if (!el) return;
+    const name = el.matches('[data-fun-compare]') ? 'open_compare' : el.matches('[data-fun-wechat]') ? 'open_wechat' : el.matches('[data-fun-achv]') ? 'open_achievements'
+      : el.id === 'btnLifeMusic' ? 'toggle_music' : el.id === 'funFeedbackMail' ? 'feedback_email' : el.id === 'btnContact' ? 'contact_email' : 'chapter_choice';
+    track(name, name === 'chapter_choice' ? { option: ['a', 'b', 'c'][+el.dataset.i] || '' } : {});
+  }, true);
+  // 隐私视窗：可关闭统计
+  const _priv = window.renderPrivacyModal;
+  if (typeof _priv === 'function') {
+    window.renderPrivacyModal = function () {
+      _priv.apply(this, arguments);
+      const box = document.querySelector('#privacyModal .legal-helpline');
+      if (!box || document.querySelector('#funOptOut')) return;
+      const dnt = browserSaysNo();
+      box.insertAdjacentHTML('beforebegin', `<p class="fun-optout"><label><input type="checkbox" id="funOptOut" ${optedOut() || dnt ? '' : 'checked'} ${dnt ? 'disabled' : ''}> ${tx('允许匿名访问统计（帮助我改进游戏）', 'Allow anonymous usage statistics (helps improve the game)')}</label>${dnt ? `<br><span class="muted">${tx('你的浏览器已开启「请勿追踪」，统计不会载入。', 'Your browser sends Do Not Track, so statistics never load.')}</span>` : ''}</p>`);
+      document.querySelector('#funOptOut').addEventListener('change', (e) => {
+        try { localStorage.setItem(OPTOUT_KEY, e.target.checked ? '0' : '1'); } catch (err) { /* ignore */ }
+        if (!e.target.checked && ai) { try { ai.config.disableTelemetry = true; } catch (err) { /* ignore */ } }
+        if (e.target.checked) { if (ai) { try { ai.config.disableTelemetry = false; } catch (err) { /* ignore */ } } else loadAnalytics(); }
+        try { toast(e.target.checked ? tx('已开启匿名统计', 'Statistics on') : tx('已关闭统计', 'Statistics off')); } catch (err) { /* ignore */ }
+      });
+    };
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startHans);
   else startHans();
 
