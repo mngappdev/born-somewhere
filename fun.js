@@ -1200,6 +1200,7 @@
   function track(name, props) {
     if (!analyticsAllowed()) return;
     const p = Object.assign({ lang: typeof LANG !== 'undefined' ? LANG : '' }, props || {});
+    for (const k of Object.keys(p)) p[k] = p[k] == null ? '' : String(p[k]);   // 0 / false 也要送出
     if (ai) { try { ai.trackEvent({ name }, p); } catch (e) { /* ignore */ } } else if (aiQueue.length < 50) aiQueue.push([name, p]);
   }
   function loadAnalytics() {
