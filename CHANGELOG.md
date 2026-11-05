@@ -5,7 +5,12 @@
 > **v5.89 → v6.09 的 21 個修正合併報告**：[`evidence/CONSOLIDATED-v5.89-v6.09.md`](evidence/CONSOLIDATED-v5.89-v6.09.md)
 > （每個缺陷的完整推導、原始數據與量測腳本都留有個別證據檔，連結如下）
 
-## v6.16 — 2026-11-05（目前）
+## v6.17 — 2026-11-05（目前）
+
+- 🏢 **ZenMatrix 公司宣传**：首页与讣闻页加入 ZenMatrix 介绍卡（云端、AI 与软件顾问 · ZenERP · Microsoft 授权 · 移动应用），页脚「ZenMatrix 出品」，微信反馈视窗附官网；连结皆带 UTM（utm_source=born-somewhere），点击记为 open_zenmatrix 事件。
+- 📧 联系邮件全部为 info@zenmatrix.org（含更新日志的旧纪录、页面 author meta）。
+
+## v6.16 — 2026-11-05
 
 - 📊 **匿名访问统计（Azure Application Insights）**：页面浏览、国家／地区、装置，以及 life_start / life_end / chapter_choice / open_compare / open_wechat 等匿名游戏事件（只含国家代码、年龄、模式等栏位，不含姓名或自写文字）。只在正式网域载入；浏览器开启 Do Not Track / GPC 时不载入；隐私视窗可随时关闭。
 - 🔒 隐私政策（9 种语言）改写为实际做法：原本写「不写 cookie、不追踪」，现在说明两个匿名 cookie 与统计范围。
@@ -190,7 +195,7 @@
 - 💌 **提供意見**：footer 按鈕 → textarea（最多 500 字）→ localStorage。
 - 📜 **更新說明面板**：完整版本歷史，emotion-tagged badges（新功能 / 修正 / 功能 / 樣式）。
 - 🔒 **隱私權政策 / 使用須知**：footer modal，CC BY 4.0 開源。
-- 📧 **聯絡我們**：`mailto:contact@born-somewhere.app`。
+- 📧 **聯絡我們**：`mailto:info@zenmatrix.org`（v6.15 起；原為 born-somewhere 舊信箱）。
 
 **改進**
 - 首頁 hero 加 `theme-color`、manifest link、apple-touch-icon、description meta。

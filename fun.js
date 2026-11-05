@@ -1264,6 +1264,53 @@
     };
   }
 
+  /* ------------------------------------------------------------------
+     14) v6.17：ZenMatrix 公司宣传（www.zenmatrix.org）
+     ------------------------------------------------------------------ */
+  const ZM_URL = (medium) => `https://www.zenmatrix.org/?utm_source=born-somewhere&utm_medium=referral&utm_campaign=${medium}`;
+  function zmCard(medium) {
+    return `<a class="fun-zm" href="${ZM_URL(medium)}" target="_blank" rel="noopener" data-zm="${medium}">
+      <span class="zm-logo" aria-hidden="true">ZM</span>
+      <span class="zm-body">
+        <span class="zm-k">${tx('本游戏由 ZenMatrix 制作', 'Made by ZenMatrix')}</span>
+        <b class="zm-name">ZenMatrix · ${tx('平衡科技', 'Balance in Technology')}</b>
+        <span class="zm-desc">${tx('云端、AI 与软件顾问 · ZenERP 云端会计 · Microsoft 授权 · 移动应用', 'Cloud, AI & software consulting · ZenERP cloud accounting · Microsoft licensing · Mobile apps')}</span>
+      </span>
+      <span class="zm-go">www.zenmatrix.org →</span>
+    </a>`;
+  }
+  function renderZm() {
+    const intro = $('#funIntroPanel');
+    if (intro && !$('#funZmIntro')) { intro.insertAdjacentHTML('afterend', `<div id="funZmIntro">${zmCard('home')}</div>`); }
+    else if ($('#funZmIntro')) $('#funZmIntro').innerHTML = zmCard('home');
+    const footerLink = $('#funZmFooter');
+    if (footerLink) footerLink.textContent = `🏢 ${tx('ZenMatrix 出品', 'By ZenMatrix')} · www.zenmatrix.org`;
+  }
+  const _ri4 = window.renderIntro;
+  window.renderIntro = function () { _ri4.apply(this, arguments); try { renderZm(); } catch (e) { /* ignore */ } };
+  const _re4 = window.renderEnd;
+  window.renderEnd = function () {
+    _re4.apply(this, arguments);
+    try {
+      const view = $('#view-end');
+      if (view) { $('#funZmEnd')?.remove(); view.insertAdjacentHTML('beforeend', `<div id="funZmEnd" class="fun-zm-end">${zmCard('obituary')}</div>`); }
+    } catch (e) { /* ignore */ }
+  };
+  // 反馈 / 微信视窗：加官网（视窗是动态建立的，用 MutationObserver 补上）
+
+  const addZmToWechat = () => {
+    document.querySelectorAll('.fun-wechat .fw-text').forEach(el => {
+      if (el.querySelector('.fw-site')) return;
+      el.insertAdjacentHTML('beforeend', `<span class="fw-site">🏢 <a href="${ZM_URL('feedback')}" target="_blank" rel="noopener" data-zm="feedback">www.zenmatrix.org</a></span>`);
+    });
+  };
+  new MutationObserver(addZmToWechat).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('[data-zm], #funZmFooter');
+    if (a) track('open_zenmatrix', { from: a.dataset.zm || 'footer' });
+  }, true);
+
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startHans);
   else startHans();
 
