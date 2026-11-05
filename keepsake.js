@@ -14,8 +14,10 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   // 资料层多为繁体；简体介面时，送进 canvas 以外（HTML 档、列印页）的文字要先转
   const H = (s) => (LANG === 'zh-Hans' && window.BornFun && BornFun.toHans) ? BornFun.toHans(String(s ?? '')) : String(s ?? '');
-  const SITE = () => location.origin + location.pathname.replace(/index\.html$/, '');
-  const SHARE_URL = () => SITE() + '?utm_source=keepsake&utm_medium=wechat';
+  // 正式短网址：二维码、朋友圈文案、纪录册一律指向这里（不论玩家是从哪个网址打开的）
+  const CANONICAL = 'https://life.zenmatrix.org/';
+  const SITE = () => (/^(localhost|127\.)/.test(location.hostname) ? location.origin + '/' : CANONICAL);
+  const SHARE_URL = () => SITE() + '?s=wx';   // 短一点，扫码与手打都容易；s=wx 供统计辨识来源
   const isWeChat = () => /MicroMessenger/i.test(navigator.userAgent);
   const track = (n, p) => { try { window.BornFun?.track?.(n, p); } catch (e) { /* ignore */ } };
 

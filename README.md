@@ -6,7 +6,7 @@
 
 ## 部署
 
-https://qcm8a40uzgrkv.space.mcode.cn
+https://life.zenmatrix.org
 
 ## 與 1in8b.life 的功能對齊
 
@@ -135,7 +135,7 @@ zu-pu v1 已整合為本 repo 的 `zu-pu/` 子目錄（含 30 人張氏範例家
 ## 部署
 
 - GitHub：`rollroyces/born-somewhere` main 分支
-- 正式 URL：https://qcm8a40uzgrkv.space.mcode.cn
+- 正式 URL：https://life.zenmatrix.org
 - 含 PWA manifest，可「加到主畫面」離線使用
 - 含 service worker（cache-first 策略）
 - GitHub Pages + 客製 deploy node
