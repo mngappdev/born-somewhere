@@ -228,3 +228,15 @@ body.theme-dark .zm-go { color: #F5B041; }
 .ks-warn { color: var(--bad); font-size: 13px; }
 .ks-loading { padding: 30px; text-align: center; color: var(--ink-3); }
 .ks-foot { font-size: 12px; margin-top: 10px; }
+
+/* v6.19：我的照片 */
+.ks-face { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--bg-2); flex-wrap: wrap; }
+.ks-face-thumb { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex: none; }
+.ks-face-t { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 200px; font-size: 13px; }
+.ks-face-btns { display: flex; gap: 6px; }
+.ks-crop { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.ks-crop canvas { width: 260px; height: 260px; border-radius: 10px; background: #222; touch-action: none; cursor: grab; }
+.ks-crop-side { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 200px; font-size: 13px; }
+.ks-crop-side input[type=range] { width: 100%; }
+.ks-crop-side input[type=number] { width: 90px; margin-left: 6px; }
+.ks-chk { display: flex; gap: 6px; align-items: flex-start; }

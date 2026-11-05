@@ -213,6 +213,166 @@
     }
   }
 
+  /* ---------------- 我的照片（本机处理，不上传） ----------------
+     不做 AI 换脸：同一张脸依「拍照年龄」分三种呈现 ——
+       拍照之前的阶段 → 泛黄旧相片（拍立得边框、颗粒、褪色）
+       拍照时的阶段   → 原照片，彩色清晰（「就是现在的你」）
+       之后的阶段     → 铅笔速写（「还没到来的你」）
+     脸部裁切为 600×600；勾选「记住」时存在本机 localStorage。 */
+  const FACE_KEY = 'born-somewhere-v2:ks-face';
+  let FACE = null;   // { url, age, img }
+  (function loadFace() {
+    try {
+      const raw = localStorage.getItem(FACE_KEY);
+      if (!raw) return;
+      const f = JSON.parse(raw);
+      if (f && f.url) { FACE = { url: f.url, age: +f.age || 30, img: null }; }
+    } catch (e) { FACE = null; }
+  })();
+  async function faceImg() {
+    if (!FACE) return null;
+    if (!FACE.img) FACE.img = await loadImg(FACE.url);
+    return FACE.img;
+  }
+  function faceMode(st) {
+    if (!FACE) return null;
+    const a = FACE.age;
+    if (a >= st.min && a <= st.max) return 'now';
+    return a > st.max ? 'past' : 'future';
+  }
+  // 低成本模糊：缩小再放大（所有浏览器都支援，不依赖 ctx.filter）
+  function softBlur(src, k) {
+    const s = document.createElement('canvas'); s.width = Math.max(1, Math.round(src.width / k)); s.height = Math.max(1, Math.round(src.height / k));
+    const sx = s.getContext('2d'); sx.imageSmoothingQuality = 'high'; sx.drawImage(src, 0, 0, s.width, s.height);
+    const o = document.createElement('canvas'); o.width = src.width; o.height = src.height;
+    const ox = o.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(s, 0, 0, o.width, o.height);
+    return o;
+  }
+  function faceCanvas(img, mode, seed) {
+    const N = 600;
+    const c = document.createElement('canvas'); c.width = N; c.height = N;
+    const x = c.getContext('2d');
+    x.drawImage(img, 0, 0, N, N);
+    if (mode === 'now') return c;
+    const d = x.getImageData(0, 0, N, N), p = d.data;
+    if (mode === 'past') {
+      // 褪色 + 棕褐 + 颗粒 + 暗角；越早的阶段越旧（seed 0..1）
+      const fade = 0.25 + 0.25 * seed;
+      let r = 1234567;
+      for (let i = 0; i < p.length; i += 4) {
+        const R = p[i], G = p[i + 1], B = p[i + 2];
+        let sr = R * .393 + G * .769 + B * .189, sg = R * .349 + G * .686 + B * .168, sb = R * .272 + G * .534 + B * .131;
+        sr = sr * (1 - fade) + 235 * fade; sg = sg * (1 - fade) + 220 * fade; sb = sb * (1 - fade) + 190 * fade;
+        r = (r * 1103515245 + 12345) & 0x7fffffff; const n = ((r % 41) - 20) * (0.6 + seed * 0.6);
+        const px = (i / 4) % N, py = Math.floor(i / 4 / N), dx = px / N - .5, dy = py / N - .5;
+        const vig = 1 - Math.min(0.45, (dx * dx + dy * dy) * 1.5);
+        p[i] = Math.min(255, (sr + n) * vig); p[i + 1] = Math.min(255, (sg + n) * vig); p[i + 2] = Math.min(255, (sb + n) * vig);
+      }
+      x.putImageData(d, 0, 0);
+      return c;
+    }
+    // future：铅笔速写（灰阶 + 反相模糊 + 颜色减淡），再叠一点纸色
+    const gray = document.createElement('canvas'); gray.width = N; gray.height = N;
+    const gx = gray.getContext('2d'); const gd = gx.createImageData(N, N);
+    for (let i = 0; i < p.length; i += 4) { const v = p[i] * .299 + p[i + 1] * .587 + p[i + 2] * .114; gd.data[i] = gd.data[i + 1] = gd.data[i + 2] = 255 - v; gd.data[i + 3] = 255; }
+    gx.putImageData(gd, 0, 0);
+    const blurred = softBlur(gray, 7 + Math.round(seed * 5)).getContext('2d').getImageData(0, 0, N, N).data;
+    const strength = 1 - seed * 0.25;   // 越后面的阶段线条越淡
+    for (let i = 0; i < p.length; i += 4) {
+      const base = p[i] * .299 + p[i + 1] * .587 + p[i + 2] * .114;
+      const inv = blurred[i];
+      let v = inv >= 255 ? 255 : Math.min(255, base * 255 / (255 - inv));
+      v = 255 - (255 - v) * strength;
+      p[i] = Math.min(255, v * 0.98 + 4); p[i + 1] = Math.min(255, v * 0.96 + 6); p[i + 2] = Math.min(255, v * 0.9 + 10);
+    }
+    x.putImageData(d, 0, 0);
+    return c;
+  }
+  // 依模式把脸放进相框：旧相片 = 拍立得白框微倾斜；现在 = 圆角彩照；速写 = 素描纸
+  function drawFaceFrame(ctx, face, mode, x, y, size, tilt, label) {
+    ctx.save();
+    ctx.translate(x + size / 2, y + size / 2);
+    ctx.rotate(tilt);
+    const pad = mode === 'past' ? 22 : 14, bottom = mode === 'past' ? 70 : 14;
+    ctx.shadowColor = 'rgba(0,0,0,.28)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 10;
+    ctx.fillStyle = mode === 'future' ? '#f7f3ea' : '#fffdf8';
+    rr(ctx, -size / 2 - pad, -size / 2 - pad, size + pad * 2, size + pad + bottom, mode === 'now' ? 28 : 6); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.save(); rr(ctx, -size / 2, -size / 2, size, size, mode === 'now' ? 20 : 2); ctx.clip();
+    ctx.drawImage(face, -size / 2, -size / 2, size, size); ctx.restore();
+    if (label) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (mode === 'past') { ctx.fillStyle = '#6b5a44'; ctx.font = `500 28px ${SERIF}`; ctx.fillText(label, 0, size / 2 + 36); }
+      else { ctx.fillStyle = 'rgba(255,255,255,.96)'; ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 6; ctx.font = `${mode === 'future' ? 'italic ' : ''}600 28px ${FONT}`; ctx.fillText(label, 0, size / 2 + pad + 34); ctx.shadowColor = 'transparent'; }
+      ctx.textAlign = 'left';
+    }
+    ctx.restore();
+  }
+  const MODE_LABEL = { past: () => tx('旧相片', 'Old photo'), now: () => tx('就是现在的你', 'This is you now'), future: () => tx('还没到来的你 · 铅笔速写', 'Not yet — a pencil sketch') };
+  // 裁切介面：拖曳移动、滑杆缩放，输出 600×600
+  function cropUI(file, onDone) {
+    const box = $('#ksFaceEdit');
+    if (!box) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const V = 260;
+      let zoom = 1, ox = 0, oy = 0;
+      const base = Math.max(V / img.width, V / img.height);
+      box.innerHTML = `<div class="ks-crop"><canvas id="ksCropCv" width="${V}" height="${V}"></canvas>
+        <div class="ks-crop-side">
+          <label>${tx('缩放', 'Zoom')} <input type="range" id="ksZoom" min="1" max="4" step="0.01" value="1"></label>
+          <label>${tx('拍这张照片时我几岁', 'My age in this photo')} <input type="number" id="ksFaceAge" min="1" max="110" value="${FACE ? FACE.age : 30}" class="fun-eth-select"></label>
+          <label class="ks-chk"><input type="checkbox" id="ksFaceOwn"> ${tx('这是我本人的照片（或我有权使用）', 'This is my own photo (or I have the right to use it)')}</label>
+          <label class="ks-chk"><input type="checkbox" id="ksFaceKeep" checked> ${tx('记在这个浏览器，下次不用再传', 'Remember in this browser')}</label>
+          <div class="ks-actions"><button class="primary" id="ksFaceOk" type="button">${tx('用这张', 'Use this')}</button><button class="ghost" id="ksFaceCancel" type="button">${tx('取消', 'Cancel')}</button></div>
+          <p class="muted">${tx('拖曳照片调整位置，让脸在正中间。照片只在你的装置上处理，不会上传。', 'Drag to centre your face. Processed on your device only.')}</p>
+        </div></div>`;
+      const cv = $('#ksCropCv'), cx = cv.getContext('2d');
+      const draw = () => {
+        const s = base * zoom, w = img.width * s, h = img.height * s;
+        ox = Math.min(0, Math.max(V - w, ox)); oy = Math.min(0, Math.max(V - h, oy));
+        cx.clearRect(0, 0, V, V); cx.drawImage(img, ox, oy, w, h);
+        cx.strokeStyle = 'rgba(255,255,255,.8)'; cx.lineWidth = 2; cx.setLineDash([6, 6]);
+        cx.beginPath(); cx.ellipse(V / 2, V / 2 * 0.95, V * 0.3, V * 0.38, 0, 0, Math.PI * 2); cx.stroke(); cx.setLineDash([]);
+      };
+      ox = (V - img.width * base) / 2; oy = (V - img.height * base) / 2; draw();
+      let drag = null;
+      cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, ox, oy }; cv.setPointerCapture(e.pointerId); });
+      cv.addEventListener('pointermove', (e) => { if (!drag) return; ox = drag.ox + e.clientX - drag.x; oy = drag.oy + e.clientY - drag.y; draw(); });
+      cv.addEventListener('pointerup', () => { drag = null; });
+      $('#ksZoom').addEventListener('input', (e) => {
+        const nz = +e.target.value, s0 = base * zoom, s1 = base * nz;
+        ox = V / 2 - (V / 2 - ox) * s1 / s0; oy = V / 2 - (V / 2 - oy) * s1 / s0; zoom = nz; draw();
+      });
+      $('#ksFaceCancel').addEventListener('click', () => { URL.revokeObjectURL(url); box.innerHTML = ''; });
+      $('#ksFaceOk').addEventListener('click', () => {
+        if (!$('#ksFaceOwn').checked) { toast(tx('请先确认这是你本人的照片', 'Please confirm this is your own photo')); return; }
+        const out = document.createElement('canvas'); out.width = 600; out.height = 600;
+        const k = 600 / V, s = base * zoom;
+        out.getContext('2d').drawImage(img, ox * k, oy * k, img.width * s * k, img.height * s * k);
+        const age = Math.max(1, Math.min(110, Math.round(+$('#ksFaceAge').value || 30)));
+        const dataUrl = out.toDataURL('image/jpeg', 0.88);
+        FACE = { url: dataUrl, age, img: null };
+        if ($('#ksFaceKeep').checked) { try { localStorage.setItem(FACE_KEY, JSON.stringify({ url: dataUrl, age })); } catch (e) { toast(tx('浏览器空间不足，这次先不记住', 'Not enough storage to remember it')); } }
+        else { try { localStorage.removeItem(FACE_KEY); } catch (e) { /* ignore */ } }
+        URL.revokeObjectURL(url);
+        box.innerHTML = '';
+        track('keepsake_face', { set: 1 });
+        onDone();
+      });
+    };
+    img.onerror = () => { toast(tx('这张图片打不开，换一张试试', 'Could not open that image')); URL.revokeObjectURL(url); };
+    img.src = url;
+  }
+  function faceBar() {
+    return FACE
+      ? `<div class="ks-face"><img src="${FACE.url}" alt="" class="ks-face-thumb"><div class="ks-face-t"><b>📷 ${tx('使用我的照片', 'Using my photo')}</b><span class="muted">${tx(`拍照年龄 ${FACE.age} 岁：之前的阶段是旧相片，${FACE.age} 岁那段是原照片，之后是铅笔速写`, `Age ${FACE.age} in photo: earlier stages look like old prints, later ones are pencil sketches`)}</span></div>
+         <div class="ks-face-btns"><button class="ghost" id="ksFaceChange" type="button">${tx('更换', 'Change')}</button><button class="ghost" id="ksFaceRemove" type="button">${tx('不用照片', 'Remove')}</button></div></div>`
+      : `<div class="ks-face"><div class="ks-face-t"><b>📷 ${tx('用我的照片（可选）', 'Use my photo (optional)')}</b><span class="muted">${tx('放一张自己的正面照：拍照那个年龄段用原照片，更早的变成旧相片，之后的变成铅笔速写。只在本机处理。', 'Add a front-facing photo of yourself. Processed on your device only.')}</span></div>
+         <div class="ks-face-btns"><button class="primary" id="ksFaceChange" type="button">${tx('上传照片', 'Add photo')}</button></div></div>`;
+  }
+
   /* ---------------- 9 张图 ---------------- */
   async function makePhotos(life) {
     const s = summary(life);
@@ -229,6 +389,8 @@
         bg(ctx, '#1d2b4a', '#8C1D3C');
         header(ctx, s, i + 1, total);
         await drawImageCover(ctx, 'assets/illus-world-people.jpg', 64, 130, W - 128, 640, 40);
+        const cimg = FACE ? await faceImg() : null;
+        if (cimg) drawFaceFrame(ctx, cimg, 'now', W - 64 - 330, 360, 280, 0.03, '');
         paper(ctx, 64, 810, W - 128, 566);
         ctx.textBaseline = 'top'; ctx.fillStyle = '#8C1D3C'; ctx.font = `600 32px ${FONT}`;
         ctx.fillText(tx('这一生', 'This life'), 112, 860);
@@ -272,7 +434,19 @@
         bg(ctx, st.color[0], st.color[1]);
         header(ctx, s, i + 1, total);
         let top = 130;
-        if (st.img) { await drawImageCover(ctx, st.img, 64, 130, W - 128, 420, 40); top = 590; }
+        const fmode = faceMode(st), fimg = fmode ? await faceImg() : null;
+        if (fimg) {
+          // 我的照片：左边相框，右边阶段名称
+          const order = STAGES.indexOf(st), photoStage = STAGES.findIndex(x => FACE.age >= x.min && FACE.age <= x.max);
+          const dist = Math.min(1, Math.abs(order - (photoStage < 0 ? STAGES.length : photoStage)) / 3);
+          const fc = faceCanvas(fimg, fmode, dist);
+          drawFaceFrame(ctx, fc, fmode, 110, 168, 330, fmode === 'past' ? -0.05 : fmode === 'future' ? 0.035 : 0, MODE_LABEL[fmode]());
+          ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(255,255,255,.95)';
+          ctx.font = `120px ${FONT}`; ctx.fillText(st.icon, 520, 170);
+          ctx.font = `700 110px ${SERIF}`; ctx.fillText(tx(st.zh, st.en), 520, 300);
+          ctx.font = `400 40px ${FONT}`; ctx.fillText(`${st.min} – ${Math.min(st.max, s.age)} ${tx('岁', 'years')}`, 526, 440);
+          top = 600;
+        } else if (st.img) { await drawImageCover(ctx, st.img, 64, 130, W - 128, 420, 40); top = 590; }
         else {
           ctx.font = `200px ${FONT}`; ctx.textBaseline = 'top'; ctx.fillText(st.icon, 64, 150);
           ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = `700 120px ${SERIF}`; ctx.fillText(tx(st.zh, st.en), 330, 180);
@@ -281,11 +455,12 @@
         }
         paper(ctx, 64, top, W - 128, HGT - top - 110);
         ctx.textBaseline = 'top';
-        if (st.img) {
+        const paperTitle = !fimg && st.img;
+        if (paperTitle) {
           ctx.fillStyle = '#8C1D3C'; ctx.font = `700 60px ${SERIF}`; ctx.fillText(`${st.icon} ${tx(st.zh, st.en)}`, 112, top + 44);
-          ctx.fillStyle = '#888'; ctx.font = `400 32px ${FONT}`; ctx.fillText(`${st.min} – ${Math.min(st.max, s.age)} ${tx('岁', 'years')}`, 112 + ctx.measureText('').width + 420, top + 64);
+          ctx.fillStyle = '#888'; ctx.font = `400 32px ${FONT}`; ctx.fillText(`${st.min} – ${Math.min(st.max, s.age)} ${tx('岁', 'years')}`, 532, top + 64);
         }
-        eventList(ctx, stageEvents(life, st, st.img ? 4 : 6), 112, top + (st.img ? 150 : 60), W - 224, HGT - 130);
+        eventList(ctx, stageEvents(life, st, paperTitle ? 4 : 5), 112, top + (paperTitle ? 150 : 56), W - 224, HGT - 130);
         await footer(ctx, false);
       } else if (kind === 'data') {
         bg(ctx, '#203a43', '#2c5364');
@@ -378,6 +553,9 @@
       <div class="fun-card-head"><h3>🎁 ${tx('珍藏这段人生', 'Keepsakes')}</h3><button class="ghost" data-ks-close>✕</button></div>
       <label class="ks-pick">${tx('选择人生', 'Choose a life')}
         <select id="ksLife" class="fun-eth-select">${lives.map(l => `<option value="${l.key}" ${l.key === sel.key ? 'selected' : ''}>${esc(H(l.label))}</option>`).join('')}</select></label>
+      <div id="ksFaceWrap">${faceBar()}</div>
+      <div id="ksFaceEdit"></div>
+      <input type="file" id="ksFaceFile" accept="image/*" hidden>
       <div class="ks-tabs">
         <button class="ks-tab active" data-ks-tab="photos">📸 ${tx('照片组合 · 朋友圈', 'Photo set')}</button>
         <button class="ks-tab" data-ks-tab="album">📖 ${tx('人生相簿 PDF', 'Album (PDF)')}</button>
@@ -393,7 +571,28 @@
       renderTab(b.dataset.ksTab);
     }));
     current = { key: sel.key, life: sel.life, photos: null, blobs: null };
+    wireFace();
     renderTab('photos');
+  }
+  function activeTab() { return document.querySelector('#ksModal .ks-tab.active')?.dataset.ksTab || 'photos'; }
+  function faceChanged() {
+    if (current) { current.photos = null; current.blobs = null; }
+    const w = $('#ksFaceWrap'); if (w) w.innerHTML = faceBar();
+    wireFace();
+    renderTab(activeTab());
+  }
+  function wireFace() {
+    const file = $('#ksFaceFile');
+    $('#ksFaceChange')?.addEventListener('click', () => file && file.click());
+    $('#ksFaceRemove')?.addEventListener('click', () => {
+      FACE = null; try { localStorage.removeItem(FACE_KEY); } catch (e) { /* ignore */ }
+      track('keepsake_face', { set: 0 });
+      faceChanged();
+    });
+    if (file && !file._wired) {
+      file._wired = true;
+      file.addEventListener('change', () => { const f = file.files && file.files[0]; file.value = ''; if (f) cropUI(f, faceChanged); });
+    }
   }
   async function ensurePhotos() {
     if (current.photos) return;
@@ -571,8 +770,9 @@ svg { width: 100%; height: auto; }
 .log li { margin: 2px 0; } .log b { color: var(--accent); display: inline-block; min-width: 3em; }
 footer { color: var(--mute); font-size: 12px; margin-top: 40px; text-align: center; }
 a { color: var(--accent); }
+.hd { display: flex; gap: 16px; align-items: center; } .avatar { width: 88px; height: 88px; border-radius: 50%; object-fit: cover; border: 3px solid var(--line); flex: none; }
 </style></head><body><main>
-<h1>${esc(H(s.name))}</h1>
+<div class="hd">${FACE ? `<img class="avatar" src="${FACE.url}" alt="">` : ''}<h1>${esc(H(s.name))}</h1></div>
 <p class="meta">${s.c.flag} ${esc(H(s.loc.name))} · ${fmtBirth(life)} – ${s.dy} · ${s.age} ${tx('岁', 'years')} · ${esc(s.sex)}${s.eth ? ' · ' + esc(s.eth) : ''}${s.cause ? ' · ' + esc(H(s.cause)) : ''} · ${tx('登记编号', 'Reg.')} ${esc(life.regNumber || '')}</p>
 <div class="cards">
  <div class="card">${tx('稀有度', 'Rarity')}<b>${s.r ? s.r.tier.id : '—'}</b></div>
