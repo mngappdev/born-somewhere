@@ -1782,7 +1782,9 @@ function milestoneEvents(life, newAge) {
   }
   // 戰爭/衝突（教學版過濾掉）
   // v5.62：每種戰爭事件一生只出現一次，全部用完就不再抽
-  const warEvt = life.countryData?.wh || 0;
+  // v6.18：原本讀的是 wh（世界幸福指數 0–10），172 國裡 156 國都 > 0.1，新加坡每年約 65% 機率出現空襲／徵兵。
+  // 戰亂強度在 war 欄位（烏克蘭 2、敘利亞 1、阿富汗 0.3、新加坡 0）。
+  const warEvt = life.countryData?.war || 0;
   if (!STATE.eduMode && !STATE.softMode && warEvt > 0.1 && newAge >= 1) {
     const pool = [
       LANG === 'en' ? 'Air raid sirens. The family shelters in the basement.' : '空襲警報響起，全家躲進防空洞。',
@@ -2522,7 +2524,7 @@ function generateYearlyEvent(life) {
     events.push({ weight: 8, icon: '🕯️', en: 'Kept an old photo on the shelf', zh: '把舊照片擺在架上', rep: true });
   }
   // 加國家特殊事件
-  if (c.wh > 0.5 && Math.random() < c.wh * 0.1) {
+  if ((c.war || 0) > 0.1 && Math.random() < (c.war || 0) * 0.15) {   // v6.18：同上，原本誤用 wh
     events.push({ weight: 20, icon: '⚔️', en: 'Affected by local unrest', zh: '受到當地動亂影響' });
   }
   // v5.62：抽權重前先濾掉「一生只該發生一次」而且已經發生過的事件，
