@@ -1,0 +1,114 @@
+/* born-somewhere v6.13 —— fun.js 的样式 */
+
+/* 简体介面改用简体字型（原本 --sans 以 PingFang TC / 正黑体优先） */
+html[lang="zh-Hans"] {
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue", sans-serif;
+  --serif: "Cormorant Garamond", "Source Han Serif SC", "Noto Serif SC", "Songti SC", "Times New Roman", serif;
+}
+
+.fun-pick-hint { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+
+/* 首页：今日挑战 + 成就 */
+.fun-panel {
+  display: grid; grid-template-columns: 2fr 1fr; gap: 12px;
+  margin: 18px 0 6px; max-width: 640px;
+}
+.fp-item {
+  text-align: left; background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px 14px; min-width: 0;
+}
+.fp-daily.done { border-color: var(--good); background: var(--good-soft); }
+.fp-achv { cursor: pointer; transition: transform .15s ease, border-color .15s ease; }
+.fp-achv:hover { transform: translateY(-2px); border-color: var(--accent); }
+.fp-k { font-size: 12px; color: var(--ink-3); letter-spacing: .04em; }
+.fp-v { font-size: 17px; font-weight: 600; margin: 2px 0; color: var(--ink); }
+.fp-s { font-size: 12px; color: var(--ink-2); }
+@media (max-width: 560px) { .fun-panel { grid-template-columns: 1fr; } }
+
+/* 出生卡：稀有度 + 运气 */
+.fun-rarity {
+  border: 2px solid var(--tier); border-radius: 12px; padding: 12px 14px; margin: 0 0 14px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--tier) 14%, transparent), transparent 70%);
+}
+.fr-tier { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--tier); }
+.fr-badge {
+  display: inline-block; min-width: 42px; text-align: center; padding: 2px 8px; border-radius: 6px;
+  background: var(--tier); color: #fff; font-family: var(--mono); font-weight: 700; letter-spacing: .05em;
+}
+.fr-line { font-size: 13px; color: var(--ink-2); margin: 6px 0 10px; }
+.fr-luck-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.fr-luck-head b { font-size: 22px; color: var(--accent); }
+.fr-luck-lbl { margin-left: auto; font-weight: 600; }
+.fr-bar { height: 8px; border-radius: 99px; background: var(--bg-3); overflow: hidden; margin: 4px 0 6px; }
+.fr-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--bad), var(--gold), var(--good)); }
+.fr-sub { font-size: 12px; color: var(--ink-3); }
+
+/* 扭蛋转盘 */
+.fun-spin {
+  position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(6px); padding: 16px;
+}
+.fs-card {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 28px 36px;
+  text-align: center; min-width: min(320px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.fs-title { font-size: 14px; color: var(--ink-3); letter-spacing: .1em; }
+.fs-flag { font-size: 96px; line-height: 1.15; margin: 10px 0 4px; }
+.fs-name { font-size: 22px; font-weight: 700; font-family: var(--serif); min-height: 1.4em; }
+.fs-tier { margin-top: 10px; min-height: 1.6em; font-weight: 600; color: var(--tier, var(--ink)); }
+.fs-tier b { display: inline-block; padding: 2px 10px; border-radius: 6px; background: var(--tier); color: #fff; font-family: var(--mono); }
+.fun-spin.fs-done .fs-card { border: 2px solid var(--tier); animation: fsPop .45s cubic-bezier(.2,1.6,.4,1); }
+.fun-spin.fs-done .fs-flag { animation: fsBounce .6s ease; }
+@keyframes fsPop { from { transform: scale(.85); } to { transform: scale(1); } }
+@keyframes fsBounce { 0% { transform: scale(1); } 40% { transform: scale(1.25); } 100% { transform: scale(1); } }
+
+/* 成就墙 */
+.fun-card { max-width: 720px; }
+.fun-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fun-card-head h3 { margin: 0; font-family: var(--serif); font-size: 22px; }
+.fun-achv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+.fun-achv {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 10px; text-align: center;
+  background: var(--bg-2); opacity: .55; filter: grayscale(1);
+}
+.fun-achv.on { opacity: 1; filter: none; border-color: var(--gold-line); background: var(--gold-soft); }
+.fa-icon { font-size: 30px; }
+.fa-name { font-weight: 700; margin-top: 4px; font-size: 14px; }
+.fa-desc { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+
+/* 讣闻页：本次结果 */
+.fun-end { max-width: 860px; margin: 0 auto 16px; }
+.fe-row, .fe-fresh { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fe-fresh { margin-top: 10px; }
+.fe-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 99px;
+  border: 1px solid var(--line); background: var(--bg-2); font-size: 13px;
+}
+.fe-chip b { color: #fff; background: var(--tier, var(--ink-3)); border-radius: 4px; padding: 0 6px; font-family: var(--mono); }
+.fe-chip.ok { border-color: var(--good); background: var(--good-soft); }
+.fe-chip.no { color: var(--ink-2); }
+.fe-btn { cursor: pointer; }
+.fe-btn:hover { border-color: var(--accent); }
+.fe-lbl { font-size: 12px; color: var(--ink-3); }
+.fe-badge {
+  padding: 6px 12px; border-radius: 10px; background: var(--gold-soft); border: 1px solid var(--gold-line);
+  color: var(--gold-ink); font-weight: 600; font-size: 13px; animation: fsPop .45s ease;
+}
+
+/* 彩带 */
+.fun-confetti { position: fixed; inset: 0; pointer-events: none; z-index: 130; overflow: hidden; }
+.fun-confetti i {
+  position: absolute; top: -12px; width: 8px; height: 14px; border-radius: 2px;
+  animation-name: funFall; animation-timing-function: cubic-bezier(.3,.6,.6,1); animation-fill-mode: forwards;
+}
+@keyframes funFall { to { top: 105%; transform: rotate(720deg) translateX(40px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fun-spin.fs-done .fs-card, .fun-spin.fs-done .fs-flag, .fe-badge { animation: none; }
+}
+
+/* 新增的「出生地」分段让窄屏多出一列，确保分段按钮可换行不撑破版面 */
+.mode-block .seg-group { max-width: 100%; min-width: 0; }
+.mode-block .seg { flex-wrap: wrap; max-width: 100%; }
+/* 动态提示取代静态的 cta-hint（两句意思重复） */
+.cta-row .fun-pick-hint + .cta-hint { display: none; }

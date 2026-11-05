@@ -23,7 +23,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.12.0';
+const APP_VERSION = '6.13.0';
 const APP_BUILD = '2026-10-23';
 
 const STATE = {
@@ -31,6 +31,7 @@ const STATE = {
   era: 'now',          // 'now' | 'past' | 'future'
   birthMode: 'baby',   // 'baby' | 'all' (此刻出生 vs 80億人活口)
   selectedCountry: null,
+  birthPick: (function(){ try { return localStorage.getItem('born-somewhere-v2:birthPick') || 'SGP'; } catch(e) { return 'SGP'; } })(), // v6.13
   life: null,
   paused: false,
   speed: 1,
@@ -920,6 +921,10 @@ async function loadData() {
   LANG = localStorage.getItem(STORAGE_KEY + ':lang') || detectLang();
 }
 function detectLang() {
+  // v6.13：預設簡體中文（使用者手動切換後以 localStorage 為準）
+  return 'zh-Hans';
+}
+function detectLangFromBrowser() {
   const nav = (navigator.language || 'en').toLowerCase();
   if (nav.startsWith('zh')) return nav.includes('hans') ? 'zh-Hans' : 'zh-Hant';
   if (nav.startsWith('en')) return 'en';
@@ -961,6 +966,14 @@ function localize(c) {
 }
 
 // ==== 出生選擇 ====
+/* v6.13：主要「出生」按鈕的出生地 —— 預設新加坡；切到「隨機」才依人口比例抽 */
+function pickBirthCountry() {
+  if (STATE.birthPick && STATE.birthPick !== 'random') {
+    const c = countryById(STATE.birthPick);
+    if (c) return c;
+  }
+  return chooseCountry(STATE.birthMode);
+}
 function chooseCountry(mode) {
   // mode:
   //   'baby' 依嬰兒出生人數權重（c.births — 每國每年新生兒數）
@@ -2751,8 +2764,8 @@ function renderAll() {
 function renderIntro() {
   // 國家預設
   if (!STATE.selectedCountry) {
-    // 預設第一個
-    STATE.selectedCountry = 'TWN';
+    // v6.13：預設新加坡
+    STATE.selectedCountry = 'SGP';
   }
   const sel = $('#countrySelect');
   if (sel && sel.children.length !== COUNTRIES.length) {
@@ -2952,7 +2965,7 @@ function hideBirthCertModal() {
 
 /* v5.19：點「出 生」按鈕 — 隨機抽國家、顯示出生卡、確認後才開始 */
 function startLifeWithCert() {
-  const c = chooseCountry(STATE.birthMode);
+  const c = pickBirthCountry();
   if (!c) return;
   // 顯示出生卡 modal，等使用者按「開始人生」才正式 startLife
   showBirthCertModal(c);
@@ -5154,7 +5167,7 @@ function wire() {
   });
   // v5.22：貨幣切換 + 主題切換
   const currencyBtn = $('#currencyToggle');
-  const currencies = ['NT$', 'HK$', 'MOP$', 'CNY', 'US$'];
+  const currencies = ['S$', 'NT$', 'HK$', 'MOP$', 'CNY', 'US$'];
   if (currencyBtn) currencyBtn.addEventListener('click', () => {
     const i = currencies.indexOf(STATE.life?.currency || 'NT$');
     const next = currencies[(i + 1) % currencies.length];
@@ -5204,10 +5217,10 @@ function wire() {
   if (dieBtn) dieBtn.addEventListener('click', () => { if (STATE.life && !STATE.life.died) dieNow('自行結束'); });
   const rebirthBtn = $('#btnRebirth');
   if (rebirthBtn) rebirthBtn.addEventListener('click', () => {
-    const c = chooseCountry(STATE.birthMode);
+    const c = pickBirthCountry();
     if (c) {
       stopTicker();
-      toast(LANG==='en' ? `Reborn in ${c.flag} ${c.name_zh}` : `在 ${c.flag} ${c.name_zh} 重新出生`);
+      toast(LANG==='en' ? `Reborn in ${c.flag} ${c.name_en}` : `在 ${c.flag} ${localize(c).name} 重新出生`);
       startLife(c.id);
     }
   });
@@ -5222,7 +5235,7 @@ function wire() {
   if (restart) restart.addEventListener('click', () => setView('intro'));
   const newLife = $('#btnNewLife');
   if (newLife) newLife.addEventListener('click', () => {
-    const c = chooseCountry(STATE.birthMode);
+    const c = pickBirthCountry();
     if (c) startLife(c.id);
   });
   const downloadCert = $('#btnDownloadCert');
@@ -5411,8 +5424,8 @@ function setCurrency(cur) {
   if (!STATE.life) return;
   STATE.life.currency = cur;
   const s = STATE.life.stats;
-  const rateMap = { 'NT$': 30, 'HK$': 7.8, 'MOP$': 8.05, 'CNY': 7.2, 'US$': 1 };
-  const rates = { 'NT$': '🇹🇼 NT$', 'HK$': '🇭🇰 HK$', 'MOP$': '🇲🇴 MOP$', 'CNY': '🇨🇳 CNY', 'US$': '🇺🇸 US$' };
+  const rateMap = { 'S$': 1.35, 'NT$': 30, 'HK$': 7.8, 'MOP$': 8.05, 'CNY': 7.2, 'US$': 1 };
+  const rates = { 'S$': '🇸🇬 S$', 'NT$': '🇹🇼 NT$', 'HK$': '🇭🇰 HK$', 'MOP$': '🇲🇴 MOP$', 'CNY': '🇨🇳 CNY', 'US$': '🇺🇸 US$' };
   if (!rateMap[cur]) return;
   const na = $('#netAssets');
   if (na) na.textContent = rates[cur] + Math.round((s.netAssets || 0) * rateMap[cur]).toLocaleString();
@@ -5622,7 +5635,8 @@ async function init() {
   if (location.hash === '#privacy') setTimeout(renderPrivacyModal, 200);
   if (location.hash === '#terms') setTimeout(renderTermsModal, 200);
 }
-init();
+// v6.13：等所有 script（含 fun.js）都執行完再啟動，掛鉤才保證生效
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
 /* =====================================================================
    v5.19 新增：footer + 工具列（feedback / changelog / privacy / terms /

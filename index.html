@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hans">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="fun.css" />
 </head>
 <body>
 
@@ -72,6 +73,13 @@
         <div class="seg">
           <button class="seg-btn active" data-birth-mode="baby" data-t="intro.mode.baby">此刻出生</button>
           <button class="seg-btn" data-birth-mode="all" data-t="intro.mode.all">80 億人活口</button>
+        </div>
+      </div>
+      <div class="seg-group">
+        <span class="seg-label" id="funPickLabel">出生地</span>
+        <div class="seg" id="birthPickSeg">
+          <button class="seg-btn" data-birth-pick="SGP">🇸🇬 新加坡</button>
+          <button class="seg-btn" data-birth-pick="random">🎲 随机扭蛋</button>
         </div>
       </div>
       <div class="seg-group">
@@ -580,7 +588,7 @@
     <a href="#" id="btnPrivacy" class="footer-link" data-t="footer.privacy">隱私權政策</a>
     <a href="#" id="btnTerms" class="footer-link" data-t="footer.terms">使用須知</a>
     <a href="mailto:contact@born-somewhere.app" id="btnContact" class="footer-link" data-t="footer.contact">聯絡我們</a>
-    <span class="footer-ver">v6.12 · <span data-t="footer.copyright">CC BY 4.0 · 開放源</span></span>
+    <span class="footer-ver">v6.13 · <span data-t="footer.copyright">CC BY 4.0 · 開放源</span></span>
   </div>
 </footer>
 
@@ -638,7 +646,9 @@
 
 <script src="gedcom.js"></script>
 <script src="data/world-coords.js"></script>
+<script src="vendor/opencc-t2cn.js"></script>
 <script src="app.js"></script>
+<script src="fun.js"></script>
 
 <!-- v5.55：通用決策 modal（重大/小型/家人共決三種版型共用） -->
 <div id="decisionModal" class="modal" hidden>
