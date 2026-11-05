@@ -69,7 +69,8 @@
   function familyRows(life) {
     const f = life.family || {};
     const out = [];
-    const rel = (p, zh, en) => p && p.name && out.push({ rel: tx(zh, en), name: p.name, note: p.note || '' });
+    const nm = (n) => (typeof n === 'string' ? n : (n && (n.full || n.full_en)) || '');
+    const rel = (p, zh, en) => p && nm(p.name) && out.push({ rel: tx(zh, en), name: nm(p.name), note: typeof p.note === 'string' ? p.note : '' });
     (f.parents || []).forEach(p => rel(p, p.sex === 'M' ? '父亲' : '母亲', p.sex === 'M' ? 'Father' : 'Mother'));
     (f.grandparents || []).forEach(p => rel(p, p.sex === 'M' ? '祖父/外祖父' : '祖母/外祖母', 'Grandparent'));
     (f.siblings || []).forEach(p => rel(p, p.sex === 'M' ? '兄弟' : '姊妹', 'Sibling'));
@@ -254,8 +255,8 @@
           [tx('性别', 'Sex'), s.sex + (s.eth ? ` · ${s.eth}` : '')],
           [tx('出生地', 'Place'), life.stats?.birthPlaceType === 'rural' ? tx('乡村', 'Rural') : tx('城市', 'Urban')],
           [tx('家境', 'Household'), `Q${life.stats?.incomeQuartile || 2} / 4`],
-          [tx('父亲', 'Father'), father ? father.name : '—'],
-          [tx('母亲', 'Mother'), mother ? mother.name : '—'],
+          [tx('父亲', 'Father'), father ? (typeof father.name === 'string' ? father.name : father.name?.full || '—') : '—'],
+          [tx('母亲', 'Mother'), mother ? (typeof mother.name === 'string' ? mother.name : mother.name?.full || '—') : '—'],
           [tx('预期寿命', 'Life expectancy'), `${s.c.le} ${tx('岁', 'years')}`],
         ];
         let y = 840;

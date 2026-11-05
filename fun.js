@@ -860,15 +860,17 @@
     if (ch.local && LOCAL_COUNTRIES.includes(life.country) && sText(`s6.${life.country}.${ch.local}`)) return { key: `s6.${life.country}.${ch.local}`, fx: ch.lfx || ch.fx };
     return { key: 's6.' + ch.id, fx: ch.fx };
   }
+  // 姓名可能是字串，也可能是 randomName() 回传的 {full, full_en}（伴侣、孩子就是这样存的）
+  const nameStr = (n) => (typeof n === 'string' ? n : (n && (n.full || n.full_en)) || '');
   function storyTokens(life, ch) {
     const s = st(life);
     let person = '';
-    if (['friend', 'reconnect', 'repair'].includes(ch.cond)) person = friendOf(life).name;
-    else if (ch.cond === 'partner') person = life.stats.partner?.name || '';
-    else if (['family', 'visit'].includes(ch.cond)) { const p = parentsAlive(life); person = p.length ? p[Math.floor(Math.random() * p.length)].name : ''; }
-    else if (ch.cond === 'toy') { const p = aliveFamily(life); person = p.length ? p[0].name : ''; }
+    if (['friend', 'reconnect', 'repair'].includes(ch.cond)) person = nameStr(friendOf(life).name);
+    else if (ch.cond === 'partner') person = nameStr(life.stats.partner?.name);
+    else if (['family', 'visit'].includes(ch.cond)) { const p = parentsAlive(life); person = p.length ? nameStr(p[Math.floor(Math.random() * p.length)].name) : ''; }
+    else if (ch.cond === 'toy') { const p = aliveFamily(life); person = p.length ? nameStr(p[0].name) : ''; }
     const interestKind = s.interest || 'making';
-    return { person: String(person || tx('家人', 'family')), interest: sText('ui.interest' + interestKind[0].toUpperCase() + interestKind.slice(1)) || '', lastAge: String(s.lastContactAge ?? '') };
+    return { person: person || tx('家人', 'family'), interest: sText('ui.interest' + interestKind[0].toUpperCase() + interestKind.slice(1)) || '', lastAge: String(s.lastContactAge ?? '') };
   }
   const fillT = (str, tok) => String(str || '').replace(/\{([A-Za-z]+)\}/g, (_, k) => tok[k] ?? '');
   function pushStory(life, text, icon, kind) {
@@ -972,7 +974,7 @@
     if (!d) return null;
     const s = st(life);
     const fam = aliveFamily(life);
-    const tok = { person: fam.length ? fam[Math.floor(Math.random() * fam.length)].name : (s.friend?.name || ''), interest: s.interest ? (sText('ui.interest' + s.interest[0].toUpperCase() + s.interest.slice(1)) || '') : '', lastAge: String(s.lastContactAge ?? '') };
+    const tok = { person: fam.length ? nameStr(fam[Math.floor(Math.random() * fam.length)].name) : nameStr(s.friend?.name), interest: s.interest ? (sText('ui.interest' + s.interest[0].toUpperCase() + s.interest.slice(1)) || '') : '', lastAge: String(s.lastContactAge ?? '') };
     const local = LOCAL_COUNTRIES.includes(life.country) && Math.random() < 0.3;
     const cat = local ? null : pk(dailyCats(life.age));
     const prefix = local ? `s6.local.${life.country}.` : `s6.daily.${cat}.`;
