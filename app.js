@@ -7,6 +7,9 @@
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 const STORAGE_KEY = 'born-somewhere-v2';
+// v6.15：「現在」出生用裝置的當下年月（原作 1in8billion.live v1.13 的實時年月出生）；過去／未來仍為 1990／2080
+const NOW_DATE = new Date();
+const NOW_YEAR = NOW_DATE.getFullYear();
 
 let COUNTRIES = [];
 let I18N = {};
@@ -23,7 +26,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.14.0';
+const APP_VERSION = '6.15.0';
 const APP_BUILD = '2026-10-23';
 
 const STATE = {
@@ -1378,7 +1381,8 @@ function newLife(countryCode) {
     name,
     sex,
     age: 0,
-    year: STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : 2024,
+    year: STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : NOW_YEAR,
+    birthMonth: (STATE.era === 'past' || STATE.era === 'future') ? null : NOW_DATE.getMonth() + 1,   // v6.15
     yearOffset: 0,
     // 個人條件
     smoker: chance(c.sm / 100 * 0.5),
@@ -1415,7 +1419,7 @@ function newLife(countryCode) {
     // 同伴（v5.8 新增）：4 個同時出生的隨機人物
     companions: generateCompanions(countryCode, 4),
     // 1in8b.life 風格：出生登記編號
-    regNumber: `${countryCode}-${(STATE.era==='past'?'1990':STATE.era==='future'?'2080':'2024')}-${Math.floor(Math.random()*9000000)+1000000}`,
+    regNumber: `${countryCode}-${(STATE.era==='past'?'1990':STATE.era==='future'?'2080':String(NOW_YEAR))}-${Math.floor(Math.random()*9000000)+1000000}`,
     // 死亡
     died: false,
     cause: null,
@@ -1582,7 +1586,7 @@ function quartileLabel(q, isEn) {
 function generateFamily(countryCode, selfSex, fc) {
   const c = countryById(countryCode);
   if (!c) return { parents: [], siblings: [], grandparents: [], partner: null, kids: [] };
-  const baseYear = (STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : 2024);
+  const baseYear = (STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : NOW_YEAR);
   const war = c.war || 0;
   // 戰區孤兒機率：war 高 → 雙親存在率低
   const parentChance = Math.max(0.35, 1 - war * 0.4);
@@ -2927,7 +2931,7 @@ function buildBirthCertCard(c, life) {
       <div class="bc-iso">${c.id}</div>
     </div>
     <div class="bc-reg">${t('intro.bc.regNo')}：<b>${escapeHtml(life.regNumber || (c.id + '-' + yr + '-0000000'))}</b></div>
-    <div class="bc-reg">${t('intro.bc.dob')}：<b>${yr}-01-01</b></div>
+    <div class="bc-reg">${t('intro.bc.dob')}：<b>${yr}-${String(life.birthMonth || 1).padStart(2, '0')}${life.birthMonth ? '' : '-01'}</b></div>
     <table class="bc-table">
       <tbody>
         <tr><td class="bc-k">${t('intro.bc.name')}</td><td class="bc-v">${escapeHtml(life.name.full || life.name.full_en || '—')}</td></tr>

@@ -11,6 +11,7 @@
 (function () {
   'use strict';
   const SK = 'born-somewhere-v2:fun';
+  const CONTACT_EMAIL = 'info@zenmatrix.org';
   const $ = (s, r = document) => r.querySelector(s);
   const isEn = () => typeof LANG !== 'undefined' && LANG === 'en';
   const isZh = () => typeof LANG !== 'undefined' && (LANG === 'zh-Hans' || LANG === 'zh-Hant');
@@ -415,7 +416,7 @@
       p.id = 'funIntroPanel';
       p.className = 'fun-panel';
       host.insertAdjacentElement('afterend', p);
-      p.addEventListener('click', (e) => { if (e.target.closest('[data-fun-achv]')) achvModal(); if (e.target.closest('[data-fun-wechat]')) wechatModal(); });
+      p.addEventListener('click', (e) => { if (e.target.closest('[data-fun-achv]')) achvModal(); if (e.target.closest('[data-fun-wechat]')) wechatModal(); if (e.target.closest('[data-fun-compare]')) compareModal('SGP'); });
     }
     const ch = todayChallenge();
     const days = store.get('daily', {});
@@ -433,6 +434,11 @@
         <div class="fp-k">🏆 ${tx('成就', 'Achievements')}</div>
         <div class="fp-v">${n} / ${ACHV.length}</div>
         <div class="fp-s">${tx('点开看成就墙', 'Open the wall')}</div>
+      </button>
+      <button class="fp-item fp-achv" data-fun-compare type="button">
+        <div class="fp-k">🧭 ${tx('国家对比', 'Compare')}</div>
+        <div class="fp-v">${tx('出生机率', 'Birth odds')}</div>
+        <div class="fp-s">${tx('两国并排看', 'Side by side')}</div>
       </button>
       <button class="fp-item fp-achv" data-fun-wechat type="button">
         <div class="fp-k">💌 ${tx('意见反馈', 'Feedback')}</div>
@@ -758,7 +764,8 @@
     return `<div class="fun-wechat">
       <img src="${QR_SRC}" alt="${esc(tx('作者的微信二维码', "Author's WeChat QR code"))}" width="200" height="241" loading="lazy">
       <div class="fw-text"><b>💬 ${tx('加我微信，直接聊', 'Add me on WeChat')}</b>
-        <span>${tx('有 bug、建议或想看的新玩法，扫码加好友告诉我。', 'Bugs, ideas, new features you want — scan to reach me.')}</span></div>
+        <span>${tx('有 bug、建议或想看的新玩法，扫码加好友告诉我。', 'Bugs, ideas, new features you want — scan to reach me.')}</span>
+        <span class="fw-mail">📧 <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a></span></div>
     </div>`;
   }
   function wechatModal() {
@@ -785,9 +792,400 @@
     };
   }
 
+  /* ------------------------------------------------------------------
+     9) v6.15：对齐原版 1in8billion.live（MIT）—— 人生篇章与日常叙事
+     文本来自原版 content/story-v6（data/story.json，附出处）；引擎为本仓库重写的轻量版：
+     12 个按年龄出现的篇章抉择（3 选 1，带后续回响），10 国在地篇章，
+     8 类 × 20 句日常片段 + 10 国在地片段。
+     ------------------------------------------------------------------ */
+  let STORY = null;
+  fetch('data/story.json').then(r => r.json()).then(d => { STORY = d; }).catch(() => { STORY = null; });
+  const sDict = () => (STORY ? (isZh() ? STORY['zh-Hans'] : STORY.en) : null);
+  const sText = (k) => { const d = sDict(); return d && d[k] ? d[k] : null; };
+  const LOCAL_COUNTRIES = ['CHN', 'JPN', 'IND', 'USA', 'BRA', 'NGA', 'FRA', 'TWN', 'HKG', 'SGP'];
+  const CHAPTERS = [
+    { id: 'small-courage', min: 3, max: 5, cond: 'toy', icon: '🧸', fx: [{ knowledge: 2, happiness: -1 }, { social: 2 }, { happiness: 1 }] },
+    { id: 'school-friend', min: 8, max: 11, cond: 'friend', icon: '🤝', fx: [{ social: 3, happiness: -1 }, { social: 2 }, { happiness: 1 }] },
+    { id: 'first-interest', min: 13, max: 17, cond: 'interest', icon: '🎨', fx: [{ knowledge: 3, happiness: -1 }, { social: 2, knowledge: 1 }, { happiness: 1 }] },
+    { id: 'words-at-home', min: 19, max: 24, cond: 'family', icon: '🏡', fx: [{ social: 2, happiness: -1 }, { social: 2 }, { knowledge: 1, happiness: 1 }] },
+    { id: 'old-friend', min: 24, max: 38, cond: 'reconnect', icon: '✉️', local: 'reconnect', fx: [{ social: 3, happiness: -1 }, { social: 2 }, { happiness: 1 }], lfx: [{ social: 2, happiness: 1 }, { social: 3, happiness: -1 }, { happiness: 1 }] },
+    { id: 'return-interest', min: 27, max: 44, cond: 'return', icon: '🎻', local: 'return', fx: [{ knowledge: 2, happiness: 2, social: -1 }, { knowledge: 1, happiness: 1 }, { happiness: 1 }], lfx: [{ knowledge: 2, happiness: 1 }, { knowledge: 1, social: 1 }, { happiness: 2 }] },
+    { id: 'family-time', min: 31, max: 49, cond: 'visit', icon: '🍲', local: 'visit', fx: [{ social: 3, knowledge: -1 }, { social: 1, knowledge: 1 }, { knowledge: 2, social: -1 }], lfx: [{ social: 3, happiness: -1 }, { social: 2, happiness: 1 }, { happiness: 1 }] },
+    { id: 'work-boundary', min: 34, max: 57, cond: 'boundary', icon: '💼', fx: [{ social: 2, happiness: -1 }, { knowledge: 2 }, { happiness: 2, social: -1 }] },
+    { id: 'shared-time', min: 37, max: 63, cond: 'partner', icon: '💞', fx: [{ social: 3, happiness: -1 }, { social: 2, happiness: 1 }, { social: 1, knowledge: 1 }] },
+    { id: 'friend-repair', min: 46, max: 71, cond: 'repair', icon: '🌉', fx: [{ social: 2, knowledge: 1 }, { social: 3, happiness: -1 }, { happiness: 1 }] },
+    { id: 'later-letter', min: 63, max: 86, cond: 'letter', icon: '📮', fx: [{ knowledge: 2, happiness: 1 }, { happiness: 2 }, { happiness: 1 }] },
+    { id: 'memory-box', min: 75, max: 105, cond: 'box', icon: '📦', fx: [{ knowledge: 1, happiness: 1 }, { happiness: 2 }, { happiness: 1 }] },
+  ];
+  const FX_SCALE = 2;
+  const FX_NAME = { health: ['健康', 'Health'], happiness: ['幸福', 'Happiness'], knowledge: ['知识', 'Knowledge'], social: ['人际', 'Social'] };
+  const fxLabel = (fx) => Object.entries(fx).map(([k, v]) => `${tx(FX_NAME[k][0], FX_NAME[k][1])} ${v > 0 ? '+' : ''}${v * FX_SCALE}`).join(' · ');
+  const st = (life) => (life._story ||= { done: {}, follows: [], used: {}, friend: null, interest: null, lastContactAge: null, reconnected: false, lastAge: -1, lastChoiceAge: -9 });
+  const curYear = (life) => (life.year || NOW_YEAR) + (life.age || 0);
+  const aliveFamily = (life) => {
+    const f = life.family || {};
+    const y = curYear(life);
+    return [...(f.parents || []), ...(f.siblings || []), ...(f.grandparents || [])].filter(p => p && p.name && !(p.death && p.death.year && p.death.year <= y) && !(p.birth && p.birth.year > y));
+  };
+  const parentsAlive = (life) => aliveFamily(life).filter(p => (life.family?.parents || []).includes(p));
+  function friendOf(life) {
+    const s = st(life);
+    if (!s.friend) {
+      const sex = Math.random() < 0.5 ? 'M' : 'F';
+      let n = null;
+      try { n = randomName(life.countryData, sex); } catch (e) { n = null; }
+      s.friend = { name: n ? (n.full || n.full_en) : tx('同学', 'a classmate'), sex };
+    }
+    return s.friend;
+  }
+  function eligible(life, ch) {
+    const s = st(life), emp = life.stats.employment;
+    switch (ch.cond) {
+      case 'toy': return aliveFamily(life).length > 0;
+      case 'friend': return true;
+      case 'interest': return true;
+      case 'family': return parentsAlive(life).length > 0;
+      case 'reconnect': return !!s.friend && life.age - (s.lastContactAge ?? life.age) >= 4;
+      case 'return': return !!s.interest;
+      case 'visit': return parentsAlive(life).length > 0 && (emp === 'employed' || emp === 'family_biz');
+      case 'boundary': return emp === 'employed' || emp === 'family_biz';
+      case 'partner': return !!life.stats.married && !!life.stats.partner;
+      case 'repair': return !!s.friend && s.reconnected;
+      case 'letter': return life.age >= 63;
+      case 'box': return Object.keys(s.done).length > 0;
+      default: return false;
+    }
+  }
+  function chapterKey(life, ch) {
+    if (ch.local && LOCAL_COUNTRIES.includes(life.country) && sText(`s6.${life.country}.${ch.local}`)) return { key: `s6.${life.country}.${ch.local}`, fx: ch.lfx || ch.fx };
+    return { key: 's6.' + ch.id, fx: ch.fx };
+  }
+  function storyTokens(life, ch) {
+    const s = st(life);
+    let person = '';
+    if (['friend', 'reconnect', 'repair'].includes(ch.cond)) person = friendOf(life).name;
+    else if (ch.cond === 'partner') person = life.stats.partner?.name || '';
+    else if (['family', 'visit'].includes(ch.cond)) { const p = parentsAlive(life); person = p.length ? p[Math.floor(Math.random() * p.length)].name : ''; }
+    else if (ch.cond === 'toy') { const p = aliveFamily(life); person = p.length ? p[0].name : ''; }
+    const interestKind = s.interest || 'making';
+    return { person: String(person || tx('家人', 'family')), interest: sText('ui.interest' + interestKind[0].toUpperCase() + interestKind.slice(1)) || '', lastAge: String(s.lastContactAge ?? '') };
+  }
+  const fillT = (str, tok) => String(str || '').replace(/\{([A-Za-z]+)\}/g, (_, k) => tok[k] ?? '');
+  function pushStory(life, text, icon, kind) {
+    if (!text) return;
+    life.log.push({ age: life.age, kind: kind || 'story', icon: icon || '📖', text });
+    life.latestEvent = { age: life.age, icon: icon || '📖', text };
+  }
+  function resolveChapter(life, pend, idx, automatic) {
+    const s = st(life);
+    const ch = CHAPTERS.find(c => c.id === pend.id);
+    const fx = pend.fx[idx] || {};
+    const scaled = {};
+    for (const [k, v] of Object.entries(fx)) scaled[k] = v * FX_SCALE;
+    applyFx(life, { h: scaled.health, hp: scaled.happiness, k: scaled.knowledge, s: scaled.social });
+    const opt = ['a', 'b', 'c'][idx];
+    s.done[pend.id] = { age: life.age, opt };
+    s.lastChoiceAge = life.age;
+    if (ch.cond === 'friend' || ch.cond === 'reconnect') s.lastContactAge = life.age;
+    if (ch.cond === 'reconnect' && opt !== 'c') s.reconnected = true;
+    const title = fillT(sText(pend.key), pend.tok);
+    const result = fillT(sText(`${pend.key}.${opt}.result`), pend.tok);
+    pushStory(life, `「${title}」${automatic ? tx('（自动）', ' (auto)') : ''} ${result}`, ch.icon, 'story');
+    (life.storyChoices ||= []).push({ id: pend.id, opt, age: life.age, automatic });
+    const fol = sText(`${pend.key}.${opt}.follow`), lat = sText(`${pend.key}.${opt}.later`);
+    if (fol) s.follows.push({ age: life.age + 2, key: `${pend.key}.${opt}.follow`, tok: pend.tok, icon: ch.icon });
+    if (lat) s.follows.push({ age: life.age + 8, key: `${pend.key}.${opt}.later`, tok: pend.tok, icon: ch.icon });
+  }
+  function showChapterModal(life, pend) {
+    let m = $('#funStoryModal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'funStoryModal';
+      m.className = 'modal fun-modal';
+      document.body.appendChild(m);
+    }
+    const ch = CHAPTERS.find(c => c.id === pend.id);
+    const wasPaused = !!STATE.paused;
+    STATE.paused = true;
+    try { syncPauseBtn(); } catch (e) { /* ignore */ }
+    const T = (k) => esc(fillT(sText(k), pend.tok));
+    m.innerHTML = `<div class="modal-card fun-card fun-story-card">
+      <div class="fs-kicker">${ch.icon} ${tx('人生篇章', 'Life chapter')} · ${life.age} ${tx('岁', 'y/o')}</div>
+      <h3 class="fs-h">${T(pend.key + '.preludeTitle') || T(pend.key)}</h3>
+      <p class="fs-setup">${T(pend.key + '.setup')}</p>
+      <p class="fs-prompt"><b>${T(pend.key)}</b><br>${T(pend.key + '.prompt')}</p>
+      <div class="fs-opts">${['a', 'b', 'c'].map((o, i) => `<button class="fs-opt" data-i="${i}" type="button"><span class="fs-opt-t">${T(pend.key + '.' + o)}</span><span class="fs-opt-fx">${esc(fxLabel(pend.fx[i] || {}))}</span></button>`).join('')}</div>
+      <p class="muted fs-note">${tx('没有标准答案。选择会写进这段人生，几年后还会有回响。', 'No right answer. Your choice is written into this life and echoes years later.')}</p>
+    </div>`;
+    m.hidden = false;
+    m.querySelectorAll('.fs-opt').forEach(b => b.addEventListener('click', () => {
+      m.hidden = true;
+      if (!life.died) resolveChapter(life, pend, +b.dataset.i, false);
+      STATE.paused = wasPaused;
+      try { syncPauseBtn(); renderAll(); } catch (e) { /* ignore */ }
+    }));
+  }
+  function otherModalOpen() {
+    return !!document.querySelector('.modal:not([hidden]):not(#funStoryModal), #feedbackModal, .life-modal');
+  }
+  function storyYear(life) {
+    if (!STORY || !life || life.died) return;
+    const s = st(life);
+    if (s.lastAge === life.age) return;
+    s.lastAge = life.age;
+    // 篇章回响
+    const due = s.follows.filter(f => f.age <= life.age);
+    if (due.length) {
+      s.follows = s.follows.filter(f => f.age > life.age);
+      due.forEach(f => pushStory(life, fillT(sText(f.key), f.tok), f.icon, 'story-echo'));
+    }
+    if (life.age - s.lastChoiceAge < 2) return;
+    for (const ch of CHAPTERS) {
+      if (s.done[ch.id] || life.age < ch.min || life.age > ch.max) continue;
+      if (!eligible(life, ch)) continue;
+      // 窗口内平均分布，最后一年必定出现
+      if (life.age < ch.max && Math.random() > 1 / (ch.max - life.age + 1) * 1.6) continue;
+      if (ch.cond === 'interest' && !s.interest) s.interest = pk(['music', 'drawing', 'making']);
+      if (ch.cond === 'friend') friendOf(life);
+      const { key, fx } = chapterKey(life, ch);
+      if (!sText(key)) continue;
+      const pend = { id: ch.id, key, fx, tok: storyTokens(life, ch) };
+      if (STATE.autoDecide || STATE.view !== 'life' || STATE.fastForward || otherModalOpen() || life.lastInterruptAge === life.age) resolveChapter(life, pend, 1, true);
+      else {
+        // 与 app.js 的打断间隔规则共用（tryTriggerDecision 看 lastInterruptAge），避免同一年叠两个视窗
+        life.lastInterruptAge = life.age;
+        showChapterModal(life, pend);
+      }
+      return;
+    }
+  }
+  // 日常片段
+  const DAILY_ICON = { childhood: '🌧️', study: '📓', friendship: '👫', family: '👪', work: '🗂️', home: '🪴', wellbeing: '🍵', reflection: '🕯️' };
+  function dailyCats(age) {
+    if (age < 13) return ['childhood', 'childhood', 'family', 'home', 'friendship'];
+    if (age < 23) return ['study', 'study', 'friendship', 'family', 'home', 'wellbeing'];
+    if (age < 65) return ['work', 'work', 'home', 'family', 'friendship', 'wellbeing', 'reflection'];
+    return ['reflection', 'reflection', 'wellbeing', 'family', 'home'];
+  }
+  function dailyLine(life) {
+    const d = sDict();
+    if (!d) return null;
+    const s = st(life);
+    const fam = aliveFamily(life);
+    const tok = { person: fam.length ? fam[Math.floor(Math.random() * fam.length)].name : (s.friend?.name || ''), interest: s.interest ? (sText('ui.interest' + s.interest[0].toUpperCase() + s.interest.slice(1)) || '') : '', lastAge: String(s.lastContactAge ?? '') };
+    const local = LOCAL_COUNTRIES.includes(life.country) && Math.random() < 0.3;
+    const cat = local ? null : pk(dailyCats(life.age));
+    const prefix = local ? `s6.local.${life.country}.` : `s6.daily.${cat}.`;
+    const keys = Object.keys(d).filter(k => k.startsWith(prefix) && !s.used[k]);
+    for (let i = 0; i < 6 && keys.length; i++) {
+      const k = keys.splice(Math.floor(Math.random() * keys.length), 1)[0];
+      const raw = d[k];
+      if (/\{person\}/.test(raw) && !tok.person) continue;
+      if (/\{interest\}/.test(raw) && !tok.interest) continue;
+      if (/\{lastAge\}/.test(raw) && !tok.lastAge) continue;
+      s.used[k] = life.age;
+      const text = fillT(raw, tok);
+      return { icon: local ? (life.countryData?.flag || '📍') : DAILY_ICON[cat], zh: text, en: text };
+    }
+    return null;
+  }
+
+  /* ------------------------------------------------------------------
+     10) v6.15：原创配乐（移植原版 life-audio / country-music，MIT）
+     8 首原版原创旋律 + 本仓库为新加坡写的一首；依出生国切换。
+     ------------------------------------------------------------------ */
+  const TRACKS = {
+    CHN: { zh: '窗边的竹', en: 'Bamboo by the window', beat: .72, wave: 'sine', root: 48, notes: [72, 76, 79, 81, 79, 76, 74, 72, 67, 72, 74, 76, 74, 72, 67, 69], chords: [[0, 7, 12], [5, 9, 16], [2, 7, 14], [0, 7, 12]] },
+    JPN: { zh: '纸灯笼', en: 'Paper lanterns', beat: .94, wave: 'triangle', root: 45, notes: [69, 71, 76, 78, 76, 71, 69, 66, 64, 66, 69, 71, 69, 66, 64, 66], chords: [[0, 7, 12], [5, 12, 16], [2, 9, 14], [0, 7, 12]] },
+    USA: { zh: '黄昏的门廊', en: 'A porch at dusk', beat: .83, wave: 'triangle', root: 48, notes: [67, 72, 76, 74, 72, 67, 64, 67, 69, 72, 76, 79, 76, 72, 69, 67], chords: [[0, 7, 16], [9, 16, 19], [5, 12, 16], [7, 14, 17]] },
+    GBR: { zh: '窗上的雨', en: 'Rain on the glass', beat: 1.02, wave: 'sine', root: 50, notes: [74, 77, 81, 79, 77, 74, 72, 69, 70, 74, 77, 76, 74, 70, 69, 72], chords: [[0, 7, 15], [8, 15, 19], [5, 12, 17], [7, 14, 17]] },
+    FRA: { zh: '周日的信', en: 'Letters on Sunday', beat: .79, wave: 'triangle', root: 53, notes: [77, 79, 81, 84, 81, 79, 77, 76, 74, 77, 79, 81, 79, 77, 76, 72], chords: [[0, 7, 16], [5, 12, 19], [2, 9, 17], [7, 14, 21]] },
+    DEU: { zh: '安静的几何', en: 'Quiet geometry', beat: 1.1, wave: 'sine', root: 48, notes: [72, 67, 76, 67, 74, 67, 79, 67, 72, 69, 76, 69, 74, 67, 71, 67], chords: [[0, 7, 12], [9, 16, 21], [5, 12, 17], [7, 14, 19]] },
+    CAN: { zh: '雪后的松林', en: 'Pines after snowfall', beat: .9, wave: 'triangle', root: 43, notes: [67, 71, 74, 78, 74, 71, 69, 67, 64, 67, 71, 74, 71, 67, 66, 62], chords: [[0, 7, 16], [5, 12, 19], [9, 16, 24], [7, 14, 21]] },
+    AUS: { zh: '清晨的潮', en: 'Morning tide', beat: .76, wave: 'sine', root: 50, notes: [74, 78, 81, 85, 81, 78, 76, 74, 71, 74, 78, 81, 78, 76, 74, 69], chords: [[0, 7, 16], [5, 12, 21], [9, 16, 24], [7, 14, 19]] },
+    SGP: { zh: '花园城市的傍晚', en: 'Garden city evening', beat: .8, wave: 'triangle', root: 50, notes: [74, 76, 78, 81, 83, 81, 78, 76, 74, 78, 81, 83, 86, 83, 81, 78], chords: [[0, 7, 16], [9, 16, 21], [7, 14, 19], [5, 12, 17]] },
+  };
+  const TRACK_MAP = { TWN: 'CHN', HKG: 'CHN', MAC: 'CHN', KOR: 'JPN', MNG: 'JPN', IRL: 'GBR', BEL: 'FRA', CHE: 'FRA', LUX: 'FRA', AUT: 'DEU', NLD: 'DEU', POL: 'DEU', CZE: 'DEU', NZL: 'AUS', MYS: 'SGP', IDN: 'SGP', THA: 'SGP', VNM: 'SGP', PHL: 'SGP' };
+  const trackFor = (code) => TRACKS[code] ? code : (TRACK_MAP[code] || 'USA');
+  const Audio = {
+    ctx: null, master: null, timer: null, playing: false, track: 'SGP', next: 0, step: 0, nodes: new Set(), volume: 0.22,
+    async play() {
+      if (this.playing) return true;
+      try {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        await this.ctx.resume();
+        if (!this.master) { this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination); }
+        this.master.gain.setValueAtTime(0, this.ctx.currentTime);
+        this.master.gain.linearRampToValueAtTime(1, this.ctx.currentTime + .4);
+        this.playing = true; this.next = this.ctx.currentTime + .06; this.step = 0;
+        this.schedule();
+        this.timer = this.timer || setInterval(() => this.schedule(), 300);
+        return true;
+      } catch (e) { this.playing = false; return false; }
+    },
+    note(midi, time, len, gain) {
+      const ctx = this.ctx, osc = ctx.createOscillator(), env = ctx.createGain();
+      osc.type = TRACKS[this.track].wave;
+      osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+      const lv = gain * this.volume;
+      env.gain.setValueAtTime(0, time);
+      env.gain.linearRampToValueAtTime(lv, time + .25);
+      env.gain.exponentialRampToValueAtTime(Math.max(.00001, lv * .5), time + len * .65);
+      env.gain.linearRampToValueAtTime(0, time + len);
+      osc.connect(env).connect(this.master);
+      osc.start(time); osc.stop(time + len + .02);
+      this.nodes.add(osc);
+      osc.onended = () => { this.nodes.delete(osc); osc.disconnect(); env.disconnect(); };
+    },
+    schedule() {
+      if (!this.playing || document.hidden) return;
+      const sc = TRACKS[this.track];
+      while (this.next < this.ctx.currentTime + 1.2) {
+        if (this.step % 4 === 0) sc.chords[Math.floor(this.step / 4) % 4].forEach(n => this.note(sc.root + n, this.next, sc.beat * 4, .016));
+        this.note(sc.notes[this.step % 16], this.next, sc.beat * 1.8, .032);
+        this.next += sc.beat; this.step = (this.step + 1) % 16;
+      }
+    },
+    pause() {
+      this.playing = false; clearInterval(this.timer); this.timer = null;
+      for (const n of this.nodes) { try { n.stop(); } catch (e) { /* ignore */ } }
+      this.nodes.clear();
+      if (this.ctx) this.ctx.suspend().catch(() => {});
+    },
+    setTrack(code) {
+      const t = trackFor(code);
+      if (t === this.track) return;
+      this.track = t; this.step = 0;
+      if (this.playing) { this.pause(); this.play(); }
+    },
+  };
+  document.addEventListener('visibilitychange', () => { if (document.hidden && Audio.playing) { Audio._resume = true; Audio.pause(); } });
+  async function toggleMusic() {
+    if (Audio.playing) { Audio.pause(); syncMusicBtn(); try { toast(tx('♪ 配乐已关闭', '♪ Music off')); } catch (e) { /* ignore */ } return; }
+    Audio.setTrack(STATE.life?.country || 'SGP');
+    const ok = await Audio.play();
+    syncMusicBtn();
+    const tr = TRACKS[Audio.track];
+    try { toast(ok ? `♪ ${tx('原创配乐', 'Original score')}：${tx(tr.zh, tr.en)}` : tx('此浏览器无法播放音频', 'Audio not supported')); } catch (e) { /* ignore */ }
+  }
+  function syncMusicBtn() {
+    const b = $('#btnLifeMusic');
+    if (b) { b.classList.toggle('active', Audio.playing); b.title = tx('配乐', 'Music') + (Audio.playing ? ' · ' + tx(TRACKS[Audio.track].zh, TRACKS[Audio.track].en) : ''); }
+  }
+  // 书架页原本的 ♪ 按钮（220Hz 单音）也改走新配乐
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('#toggleMusicBtn, #btnLifeMusic');
+    if (!b) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    toggleMusic();
+  }, true);
+
+  /* ------------------------------------------------------------------
+     11) v6.15：国家对比 + 出生机率（对齐原版 /compare 与 odds 工具）
+     ------------------------------------------------------------------ */
+  function compareModal(a, b) {
+    let m = $('#funCompareModal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'funCompareModal';
+      m.className = 'modal fun-modal';
+      m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-fun-close]')) m.hidden = true; });
+      m.addEventListener('change', (e) => { if (e.target.matches('.fc-sel')) compareModal($('#fcA', m).value, $('#fcB', m).value); });
+      m.addEventListener('click', (e) => {
+        const sw = e.target.closest('[data-fc-swap]');
+        if (sw) compareModal($('#fcB', m).value, $('#fcA', m).value);
+        const go = e.target.closest('[data-fc-born]');
+        if (go) { m.hidden = true; const c = countryById(go.dataset.fcBorn); if (c) { STATE._funGacha = false; showBirthCertModal(c); } }
+      });
+      document.body.appendChild(m);
+    }
+    a = a || 'SGP';
+    b = b || (STATE.life && STATE.life.country !== a ? STATE.life.country : 'CHN');
+    const A = countryById(a), B = countryById(b);
+    if (!A || !B) return;
+    const sorted = [...COUNTRIES].sort((x, y) => localize(x).name.localeCompare(localize(y).name, isZh() ? 'zh' : 'en'));
+    const opts = (sel) => sorted.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.flag} ${esc(localize(c).name)}</option>`).join('');
+    const ra = rarity(A), rb = rarity(B), la = luck(A), lb = luck(B);
+    const oneIn = (r) => Math.round(1 / r.share).toLocaleString();
+    const num = (v, d = 1) => (v == null || isNaN(v)) ? '—' : (+v).toLocaleString(undefined, { maximumFractionDigits: d });
+    const rows = [
+      [tx('出生机率', 'Odds of being born here'), `1 / ${oneIn(ra)}`, `1 / ${oneIn(rb)}`, null, null, null, tx('依每年出生人数占全球比例', 'Share of world births per year')],
+      [tx('稀有度', 'Rarity'), `<b class="fc-tier" style="--tier:${ra.tier.color}">${ra.tier.id}</b>`, `<b class="fc-tier" style="--tier:${rb.tier.color}">${rb.tier.id}</b>`, null, null],
+      [tx('出生运气', 'Birth luck'), la.score, lb.score, la.score, lb.score, 'hi'],
+      [tx('预期寿命（岁）', 'Life expectancy'), num(A.le), num(B.le), A.le, B.le, 'hi'],
+      [tx('婴儿死亡率（‰）', 'Infant mortality ‰'), num(A.im), num(B.im), A.im, B.im, 'lo'],
+      [tx('5 岁前死亡率（‰）', 'Under-5 mortality ‰'), num(A.u5), num(B.u5), A.u5, B.u5, 'lo'],
+      [tx('人均 GDP（PPP 美元）', 'GDP per capita (PPP $)'), '$' + num(A.ppp, 0), '$' + num(B.ppp, 0), A.ppp, B.ppp, 'hi'],
+      [tx('总和生育率', 'Fertility rate'), num(A.tfr, 2), num(B.tfr, 2), null, null],
+      [tx('预期受教育年数', 'Expected years of school'), num(A.eys), num(B.eys), A.eys, B.eys, 'hi'],
+      [tx('城市人口比例 %', 'Urban population %'), num(A.urb), num(B.urb), null, null],
+      [tx('吸烟率 %', 'Smoking %'), num(A.sm), num(B.sm), A.sm, B.sm, 'lo'],
+      [tx('凶杀率（每 10 万）', 'Homicide per 100k'), num(A.hom), num(B.hom), A.hom, B.hom, 'lo'],
+      [tx('道路死亡（每 10 万）', 'Road deaths per 100k'), num(A.road), num(B.road), A.road, B.road, 'lo'],
+    ];
+    const cls = (x, y, dir, me) => { if (x == null || y == null || dir == null || x === y) return ''; const better = dir === 'hi' ? (me === 'a' ? x > y : y > x) : (me === 'a' ? x < y : y < x); return better ? 'fc-win' : ''; };
+    m.innerHTML = `<div class="modal-card fun-card fun-compare-card">
+      <div class="fun-card-head"><h3>🧭 ${tx('国家对比 · 出生机率', 'Compare countries · Birth odds')}</h3><button class="ghost" data-fun-close>✕</button></div>
+      <div class="fc-pick"><select id="fcA" class="fc-sel fun-eth-select">${opts(a)}</select><button class="ghost" data-fc-swap type="button" title="${tx('交换', 'Swap')}">⇄</button><select id="fcB" class="fc-sel fun-eth-select">${opts(b)}</select></div>
+      <div class="fc-scroll"><table class="fc-table"><thead><tr><th></th><th>${A.flag} ${esc(localize(A).name)}</th><th>${B.flag} ${esc(localize(B).name)}</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="fc-k">${r[0]}${r[6] ? `<div class="fc-sub">${r[6]}</div>` : ''}</td><td class="${cls(r[3], r[4], r[5], 'a')}">${r[1]}</td><td class="${cls(r[3], r[4], r[5], 'b')}">${r[2]}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="fc-actions"><button class="primary" data-fc-born="${A.id}" type="button">${tx('出生在', 'Be born in')} ${A.flag} ${esc(localize(A).name)}</button><button class="ghost" data-fc-born="${B.id}" type="button">${tx('出生在', 'Be born in')} ${B.flag} ${esc(localize(B).name)}</button></div>
+      <p class="muted fc-src">${tx('游戏模型参考值（联合国 WPP、世界银行、WHO 等），不代表任何个人的真实人生。较好的一方以绿色标示。', 'Game-model reference values (UN WPP, World Bank, WHO…). Not a prediction of anyone\'s real life. Better value highlighted.')}</p>
+    </div>`;
+    m.hidden = false;
+  }
+
+  /* ------------------------------------------------------------------
+     12) 挂钩
+     ------------------------------------------------------------------ */
+  const _gen2 = window.generateYearlyEvent;
+  window.generateYearlyEvent = function (life) {
+    // SG 事件已在前一层；这里在原事件池前插入原版叙事的日常片段
+    try { if (life && Math.random() < 0.4) { const e = dailyLine(life); if (e) return e; } } catch (err) { /* fall back */ }
+    return _gen2.apply(this, arguments);
+  };
+  const _tick = window.tick;
+  window.tick = function () {
+    const r = _tick.apply(this, arguments);
+    try { if (STATE.life && !STATE.life.died && !STATE.paused) storyYear(STATE.life); } catch (e) { /* ignore */ }
+    return r;
+  };
+  const _wire2 = window.wire;
+  window.wire = function () {
+    _wire2.apply(this, arguments);
+    $('#btnStepYear')?.addEventListener('click', () => {
+      if (!STATE.life || STATE.life.died) return;
+      if (!STATE.paused) { STATE.paused = true; try { syncPauseBtn(); } catch (e) { /* ignore */ } }
+      STATE.paused = false;
+      try { window.tick(); } finally { STATE.paused = true; }
+      try { syncPauseBtn(); renderAll(); } catch (e) { /* ignore */ }
+    });
+    syncMusicBtn();
+  };
+  const _startLife2 = window.startLife;
+  window.startLife = function () {
+    _startLife2.apply(this, arguments);
+    if (STATE.life) Audio.setTrack(STATE.life.country);
+  };
+  // 意见反馈视窗：加上 Email
+  const _fb2 = window.renderFeedbackModal;
+  window.renderFeedbackModal = function () {
+    _fb2.apply(this, arguments);
+    // 原本的「寄出」只存在本机 localStorage —— 补一个直接寄信的按钮，把内容带进邮件
+    const send = document.querySelector('#feedbackSend');
+    if (send && !document.querySelector('#funFeedbackMail')) {
+      send.insertAdjacentHTML('beforebegin', `<button class="ghost" id="funFeedbackMail" type="button">📧 ${tx('用邮件寄给作者', 'Email the author')}</button>`);
+      document.querySelector('#funFeedbackMail').addEventListener('click', () => {
+        const body = (document.querySelector('#feedbackInput')?.value || '').trim();
+        location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(tx('模拟人生 意见反馈', 'Life simulator feedback'))}&body=${encodeURIComponent(body)}`;
+      });
+    }
+  };
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startHans);
   else startHans();
 
   // 给测试 / 除错用
-  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName };
+  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
 })();

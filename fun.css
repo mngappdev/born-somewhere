@@ -136,3 +136,43 @@ html[lang="zh-Hans"] {
 .fun-wechat-card .fun-wechat { flex-direction: column; text-align: center; }
 .fun-wechat-card .fun-wechat img { width: min(260px, 100%); }
 @media (max-width: 480px) { .fun-wechat { flex-direction: column; text-align: center; } }
+
+/* v6.15：首页卡片变多 —— 自动排列 */
+.fun-panel { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); max-width: 860px; }
+.fun-panel .fp-daily { grid-column: span 2; }
+@media (max-width: 560px) { .fun-panel { grid-template-columns: 1fr 1fr; } .fun-panel .fp-daily { grid-column: 1 / -1; } }
+.fw-mail a { color: var(--accent); font-weight: 600; }
+
+/* 人生篇章 */
+.fun-story-card { max-width: 560px; }
+.fs-kicker { font-size: 12px; letter-spacing: .08em; color: var(--ink-3); }
+.fs-h { font-family: var(--serif); font-size: 24px; margin: 6px 0 10px; color: var(--accent); }
+.fs-setup { color: var(--ink-2); margin: 0 0 12px; }
+.fs-prompt { margin: 0 0 14px; line-height: 1.7; }
+.fs-opts { display: grid; gap: 8px; }
+.fs-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--bg-2);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.fs-opt:hover, .fs-opt:focus-visible { border-color: var(--accent); transform: translateX(2px); }
+.fs-opt-t { font-weight: 600; }
+.fs-opt-fx { font-size: 12px; color: var(--ink-3); }
+.fs-note { margin: 12px 0 0; font-size: 12px; }
+#btnLifeMusic.active, #btnStepYear:active { color: var(--accent); }
+
+/* 国家对比 */
+.fun-compare-card { max-width: 640px; }
+.fc-pick { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 12px 0; }
+.fc-pick select { width: 100%; }
+.fc-scroll { overflow-x: auto; }
+.fc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.fc-table th, .fc-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+.fc-table th:first-child, .fc-table td:first-child { text-align: left; }
+.fc-table thead th { font-weight: 700; }
+.fc-k { color: var(--ink-2); }
+.fc-sub { font-size: 11px; color: var(--ink-3); }
+.fc-win { color: var(--good); font-weight: 700; background: var(--good-soft); }
+.fc-tier { display: inline-block; padding: 0 8px; border-radius: 4px; background: var(--tier); color: #fff; font-family: var(--mono); }
+.fc-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.fc-src { font-size: 12px; margin-top: 10px; }

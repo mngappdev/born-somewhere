@@ -1,4 +1,4 @@
-# born-somewhere v6.14
+# born-somewhere v6.15
 
 172 國真實統計人生模擬遊戲。從 1in8b.life（原作 v0.7.68 beta）的功能完整移植並擴充，**融合了 zu-pu 的族譜模組**（GEDCOM 5.5.1 雙向互通）。
 
@@ -57,7 +57,7 @@ https://qcm8a40uzgrkv.space.mcode.cn
 | 回饋按鈕 | `renderFeedbackModal()` | ✅ v5.19 |
 | PWA 加入主畫面 | `setupPWAInstall()` + manifest.json | ✅ v5.19 |
 | 教學版（隱沉重事件）| `checkEduMode()` `?edu=1` | ✅ v5.19 |
-| contact@born-somewhere 連結 | footer | ✅ v5.19 |
+| 聯絡我們 info@zenmatrix.org | footer + 意見回饋 | ✅ v6.15 |
 | Service Worker（離線 cache）| `sw.js` cache-first | ✅ v5.19 |
 | 9 國螢幕適配（4 語言 word-break）| CSS lang 條件 | ✅ 1in8b.life 對齊 |
 | 姓名 + 出生 + 註冊編號護照格式 | 全部顯示 | ✅ v5.17 + v5.18 |
