@@ -160,6 +160,7 @@
      2) 出生地默认新加坡 + 扭蛋转盘
      ------------------------------------------------------------------ */
   function syncBirthPick() {
+    try { syncSexEth(); } catch (e) { /* ignore */ }
     document.querySelectorAll('[data-birth-pick]').forEach(b => b.classList.toggle('active', b.dataset.birthPick === (STATE.birthPick === 'random' ? 'random' : 'SGP')));
     const btn = $('#btnStart');
     if (btn) btn.dataset.funPick = STATE.birthPick;
@@ -414,7 +415,7 @@
       p.id = 'funIntroPanel';
       p.className = 'fun-panel';
       host.insertAdjacentElement('afterend', p);
-      p.addEventListener('click', (e) => { if (e.target.closest('[data-fun-achv]')) achvModal(); });
+      p.addEventListener('click', (e) => { if (e.target.closest('[data-fun-achv]')) achvModal(); if (e.target.closest('[data-fun-wechat]')) wechatModal(); });
     }
     const ch = todayChallenge();
     const days = store.get('daily', {});
@@ -432,6 +433,11 @@
         <div class="fp-k">🏆 ${tx('成就', 'Achievements')}</div>
         <div class="fp-v">${n} / ${ACHV.length}</div>
         <div class="fp-s">${tx('点开看成就墙', 'Open the wall')}</div>
+      </button>
+      <button class="fp-item fp-achv" data-fun-wechat type="button">
+        <div class="fp-k">💌 ${tx('意见反馈', 'Feedback')}</div>
+        <div class="fp-v">${tx('加微信', 'WeChat')}</div>
+        <div class="fp-s">${tx('扫码告诉我', 'Scan to chat')}</div>
       </button>`;
     syncBirthPick();
   }
@@ -490,6 +496,8 @@
   window.wire = function () {
     _wire.apply(this, arguments);
     document.querySelectorAll('[data-birth-pick]').forEach(b => b.addEventListener('click', () => setBirthPick(b.dataset.birthPick)));
+    document.querySelectorAll('[data-birth-sex]').forEach(b => b.addEventListener('click', () => { STATE.birthSex = b.dataset.birthSex; store.set('sex', STATE.birthSex); syncSexEth(); }));
+    $('#birthEthSelect')?.addEventListener('change', (e) => { STATE.birthEth = e.target.value; store.set('eth', STATE.birthEth); });
     const hint = document.createElement('p');
     hint.id = 'funPickHint';
     hint.className = 'fun-pick-hint';
@@ -519,6 +527,7 @@
     _showCert.apply(this, arguments);
     const body = $('#birthCertBody');
     if (body && c) body.insertAdjacentHTML('afterbegin', rarityBlock(c));
+    try { certEthRow(STATE.birthCertLife); } catch (e) { /* ignore */ }
   };
 
   const _startLife = window.startLife;
@@ -577,9 +586,208 @@
     syncBirthPick();
   };
 
+  /* ------------------------------------------------------------------
+     7) v6.14：出生可选性别、种族（或自动）
+     种族影响：本人、父母、手足、伴侣、孩子的姓名风格，以及宗教分布。
+     新加坡「自动」依 2020 人口普查（华 74.3 / 马来 13.5 / 印度 9.0 / 其他 3.2）。
+     其他国家「自动」沿用原本的命名逻辑。
+     ------------------------------------------------------------------ */
+  const pk = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const wpick = (pairs) => { let r = Math.random() * pairs.reduce((s, p) => s + p[1], 0); for (const p of pairs) { r -= p[1]; if (r <= 0) return p[0]; } return pairs[0][0]; };
+  const ETHS = [
+    { id: 'auto', zh: '自动', en: 'Auto' },
+    { id: 'chinese', zh: '华人', en: 'Chinese' },
+    { id: 'malay', zh: '马来人', en: 'Malay' },
+    { id: 'indian', zh: '印度人', en: 'Indian' },
+    { id: 'eurasian', zh: '欧亚裔', en: 'Eurasian' },
+    { id: 'european', zh: '欧洲裔', en: 'European' },
+    { id: 'african', zh: '非洲裔', en: 'African' },
+    { id: 'latino', zh: '拉丁裔', en: 'Latino' },
+    { id: 'arab', zh: '阿拉伯裔', en: 'Arab' },
+  ];
+  const ethLabel = (id) => { const e = ETHS.find(x => x.id === id); return e ? tx(e.zh, e.en) : ''; };
+  const SG_ETH_W = [['chinese', 74.3], ['malay', 13.5], ['indian', 9.0], ['eurasian', 1.2], ['european', 2.0]];
+  // 华人：汉字（繁体存，显示层转简）+ 新加坡常见方言拼音
+  const CN_LAST = [['陳', 'Tan'], ['林', 'Lim'], ['李', 'Lee'], ['黃', 'Ng'], ['王', 'Ong'], ['吳', 'Goh'], ['張', 'Teo'], ['劉', 'Lau'], ['蔡', 'Chua'], ['許', 'Koh'], ['楊', 'Yeo'], ['鄭', 'Tay'], ['謝', 'Chia'], ['郭', 'Kwek'], ['洪', 'Ang'], ['曾', 'Chan'], ['邱', 'Khoo'], ['梁', 'Neo'], ['賴', 'Lai'], ['周', 'Chew']];
+  const CN_FIRST = {
+    M: [['俊傑', 'Jun Jie'], ['偉明', 'Wei Ming'], ['志強', 'Zhi Qiang'], ['家豪', 'Jia Hao'], ['明輝', 'Ming Hui'], ['子軒', 'Zi Xuan'], ['浩然', 'Hao Ran'], ['建華', 'Jian Hua'], ['國榮', 'Guo Rong'], ['宇航', 'Yu Hang']],
+    F: [['美玲', 'Mei Ling'], ['慧敏', 'Hui Min'], ['雅婷', 'Ya Ting'], ['欣怡', 'Xin Yi'], ['淑芬', 'Shu Fen'], ['佳穎', 'Jia Ying'], ['詩涵', 'Shi Han'], ['麗華', 'Li Hua'], ['思琪', 'Si Qi'], ['婉清', 'Wan Qing']],
+  };
+  const EN_GIVEN = { M: ['Jason', 'Ryan', 'Marcus', 'Daniel', 'Ethan', 'Gabriel', 'Nicholas', 'Darren'], F: ['Rachel', 'Michelle', 'Jasmine', 'Chloe', 'Sarah', 'Vanessa', 'Natalie', 'Joanne'] };
+  const MALAY_GIVEN = { M: ['Muhammad Hafiz', 'Ahmad Faizal', 'Muhammad Irfan', 'Syafiq', 'Haziq', 'Aiman', 'Danial', 'Iskandar', 'Firdaus', 'Khairul'], F: ['Nur Aisyah', 'Siti Nurhaliza', 'Nurul Huda', 'Aishah', 'Farhana', 'Syahirah', 'Amirah', 'Nadia', 'Hidayah', 'Zulaikha'] };
+  const MALAY_FATHER = ['Abdullah', 'Ismail', 'Rahman', 'Hassan', 'Osman', 'Yusof', 'Ibrahim', 'Salleh', 'Kassim', 'Hamid'];
+  const INDIAN_GIVEN = { M: ['Arjun', 'Rajesh', 'Suresh', 'Vikram', 'Karthik', 'Ganesh', 'Pravin', 'Dinesh', 'Naveen', 'Siva'], F: ['Priya', 'Kavitha', 'Divya', 'Lakshmi', 'Anitha', 'Shalini', 'Meena', 'Revathi', 'Deepa', 'Nithya'] };
+  const INDIAN_FATHER = ['Ramasamy', 'Krishnan', 'Subramaniam', 'Muthu', 'Rajan', 'Govindasamy', 'Pillai', 'Nair', 'Selvaraj', 'Balakrishnan'];
+  const WEST_GIVEN = { M: ['James', 'Daniel', 'Michael', 'Benjamin', 'Lucas', 'Oliver', 'Thomas', 'Adrian', 'Christopher', 'Matthew', 'Samuel', 'Leon'], F: ['Emma', 'Olivia', 'Charlotte', 'Sophie', 'Grace', 'Hannah', 'Isabel', 'Claire', 'Amelia', 'Laura', 'Natalie', 'Anna'] };
+  const EURO_LAST = ['Smith', 'Müller', 'Martin', 'Rossi', 'Novak', 'Jensen', 'Dubois', 'Schmidt', 'Brown', 'Kowalski', 'Andersson', 'Wilson'];
+  const EURASIAN_LAST = ['De Souza', 'Pereira', 'Rodrigues', 'Fernandez', 'Shepherdson', 'Westerhout', "D'Silva", 'Oliveiro', 'Scully', 'Hendricks'];
+  const AFR = { M: ['Kwame', 'Chinedu', 'Tunde', 'Kofi', 'Jabari', 'Emeka', 'Sipho', 'Yaw'], F: ['Amara', 'Ngozi', 'Zuri', 'Ama', 'Adaeze', 'Thandiwe', 'Abena', 'Nia'], L: ['Okafor', 'Mensah', 'Adeyemi', 'Okeke', 'Diallo', 'Nkosi', 'Mwangi', 'Boateng'] };
+  const LAT = { M: ['Diego', 'Mateo', 'Santiago', 'Carlos', 'Javier', 'Luis', 'Andrés', 'Miguel'], F: ['Sofía', 'Valentina', 'Camila', 'Lucía', 'María', 'Isabella', 'Daniela', 'Gabriela'], L: ['García', 'Rodríguez', 'Martínez', 'López', 'Hernández', 'González', 'Pérez', 'Sánchez'] };
+  const ARB = { M: ['Omar', 'Youssef', 'Khalid', 'Ahmed', 'Karim', 'Tariq', 'Hamza', 'Faisal'], F: ['Layla', 'Fatima', 'Mariam', 'Noor', 'Yasmin', 'Salma', 'Huda', 'Rania'], L: ['Al-Sayed', 'Haddad', 'Nasser', 'Khalil', 'Mansour', 'Hamdan', 'Saleh', 'Darwish'] };
+  function ethName(eth, sex, country, fatherGiven) {
+    const S = sex === 'F' ? 'F' : 'M';
+    const sg = country && country.id === 'SGP';
+    if (eth === 'chinese') {
+      const [lz, le] = pk(CN_LAST), [fz, fe] = pk(CN_FIRST[S]);
+      const eg = (sg && Math.random() < 0.6) ? pk(EN_GIVEN[S]) : '';
+      return { last: lz, first: fz, full: lz + fz, full_en: `${eg ? eg + ' ' : ''}${le} ${fe}`, en_given: eg, first_en: fe };
+    }
+    if (eth === 'malay') {
+      const g = pk(MALAY_GIVEN[S]), f = fatherGiven || pk(MALAY_FATHER);
+      const full = `${g} ${S === 'F' ? 'binti' : 'bin'} ${f}`;
+      return { last: f, first: g, full, full_en: full, given: g };
+    }
+    if (eth === 'indian') {
+      const g = pk(INDIAN_GIVEN[S]), f = fatherGiven || pk(INDIAN_FATHER);
+      const full = sg ? `${g} ${S === 'F' ? 'd/o' : 's/o'} ${f}` : `${g} ${f}`;
+      return { last: f, first: g, full, full_en: full, given: g };
+    }
+    if (eth === 'eurasian') { const g = pk(WEST_GIVEN[S]), l = pk(EURASIAN_LAST); return { last: l, first: g, full: `${g} ${l}`, full_en: `${g} ${l}` }; }
+    if (eth === 'european') { const g = pk(WEST_GIVEN[S]), l = pk(EURO_LAST); return { last: l, first: g, full: `${g} ${l}`, full_en: `${g} ${l}` }; }
+    if (eth === 'african') { const g = pk(AFR[S]), l = pk(AFR.L); return { last: l, first: g, full: `${g} ${l}`, full_en: `${g} ${l}` }; }
+    if (eth === 'latino') { const g = pk(LAT[S]), l = pk(LAT.L) + ' ' + pk(LAT.L); return { last: l, first: g, full: `${g} ${l}`, full_en: `${g} ${l}` }; }
+    if (eth === 'arab') { const g = pk(ARB[S]), l = pk(ARB.L); return { last: l, first: g, full: `${g} ${l}`, full_en: `${g} ${l}` }; }
+    return null;
+  }
+  // 宗教（繁体存，与 pickReligion 的用语一致）
+  const ETH_REL = {
+    chinese: [[['佛教', 'Buddhism'], 40], [['無信仰', 'No religion'], 26], [['基督新教', 'Protestant'], 16], [['道教', 'Taoism'], 12], [['天主教', 'Catholic'], 6]],
+    malay: [[['伊斯蘭', 'Islam'], 98], [['無信仰', 'No religion'], 2]],
+    indian: [[['印度教', 'Hinduism'], 58], [['伊斯蘭', 'Islam'], 22], [['基督教', 'Christianity'], 13], [['錫克教', 'Sikhism'], 5], [['無信仰', 'No religion'], 2]],
+    eurasian: [[['天主教', 'Catholic'], 60], [['基督新教', 'Protestant'], 28], [['無信仰', 'No religion'], 12]],
+    arab: [[['伊斯蘭', 'Islam'], 90], [['基督教', 'Christianity'], 10]],
+    latino: [[['天主教', 'Catholic'], 70], [['基督新教', 'Protestant'], 18], [['無信仰', 'No religion'], 12]],
+  };
+  function resolveEth(country) {
+    const pick = STATE.birthEth || 'auto';
+    if (pick !== 'auto') return pick;
+    if (country && country.id === 'SGP') return wpick(SG_ETH_W);
+    return null;   // 其他国家：沿用原本的命名
+  }
+  let ETH_CTX = null;   // newLife 期间：{ country, eth }
+  const _randomName = window.randomName;
+  window.randomName = function (country, sex) {
+    try {
+      let eth = null;
+      if (ETH_CTX && country && country.id === ETH_CTX.country) eth = ETH_CTX.eth;
+      else if (!ETH_CTX && STATE.life && STATE.life.ethnicity && country && country.id === STATE.life.country) eth = STATE.life.ethnicity;  // 伴侣、孩子
+      else if (country && country.id === 'SGP') eth = wpick(SG_ETH_W);   // 新加坡路人也用本地名字
+      if (eth) { const n = ethName(eth, sex, country); if (n) return n; }
+    } catch (e) { /* fall back */ }
+    return _randomName.apply(this, arguments);
+  };
+  const _newLife = window.newLife;
+  window.newLife = function (code) {
+    const c = countryById(code);
+    const eth = resolveEth(c);
+    STATE.forceSex = (STATE.birthSex === 'M' || STATE.birthSex === 'F') ? STATE.birthSex : null;
+    ETH_CTX = eth ? { country: code, eth } : null;
+    let life;
+    try { life = _newLife.apply(this, arguments); } finally { ETH_CTX = null; STATE.forceSex = null; }
+    if (!life || !eth) return life;
+    life.ethnicity = eth;
+    // 一家人的名字要合理：同父姓／父名制，而且兄弟姊妹、父亲彼此不重名
+    const fam = life.family || {};
+    const father = (fam.parents || []).find(p => p.sex === 'M');
+    if (father) {
+      const fname = String(father.name);
+      const used = new Set();
+      const uniq = (sex, gen) => { let n; for (let i = 0; i < 12; i++) { n = gen(sex); if (n && !used.has(n.first)) break; } if (n) used.add(n.first); return n; };
+      let gen = null;
+      if (eth === 'malay' || eth === 'indian') {
+        const fg = fname.split(/ (?:bin|binti|s\/o|d\/o) /)[0];
+        used.add(fg);
+        gen = (sex) => ethName(eth, sex, c, fg);
+      } else if (eth === 'chinese') {
+        const ln = fname.charAt(0);
+        const pair = CN_LAST.find(p => p[0] === ln);
+        used.add(fname.slice(1));
+        gen = (sex) => {
+          const n = ethName(eth, sex, c);
+          if (n && pair) { n.last = ln; n.full = ln + n.first; n.full_en = `${n.en_given ? n.en_given + ' ' : ''}${pair[1]} ${n.first_en}`; }
+          return n;
+        };
+      } else {
+        // 西式姓氏：跟父亲同姓（拉丁裔取父亲第一个姓 + 随机母姓）
+        const parts = fname.split(' ');
+        used.add(parts[0]);
+        const fl = eth === 'latino' ? parts[1] : parts.slice(1).join(' ');
+        gen = (sex) => {
+          const n = ethName(eth, sex, c);
+          if (n && fl) { n.last = eth === 'latino' ? `${fl} ${pk(LAT.L)}` : fl; n.full = n.full_en = `${n.first} ${n.last}`; }
+          return n;
+        };
+      }
+      const me = uniq(life.sex, gen);
+      if (me) life.name = me;
+      (fam.siblings || []).forEach(s => { const sn = uniq(s.sex, gen); if (sn) s.name = sn.full; });
+    }
+    const rel = ETH_REL[eth];
+    if (rel && life.stats) { const r = wpick(rel); life.stats.religion = isEn() ? r[1] : r[0]; }
+    return life;
+  };
+  function syncSexEth() {
+    const sx = STATE.birthSex || 'auto';
+    document.querySelectorAll('[data-birth-sex]').forEach(b => {
+      b.classList.toggle('active', b.dataset.birthSex === sx);
+      b.textContent = b.dataset.birthSex === 'auto' ? tx('🎲 自动', '🎲 Auto') : b.dataset.birthSex === 'M' ? tx('♂ 男', '♂ Male') : tx('♀ 女', '♀ Female');
+    });
+    const sl = $('#funSexLabel'); if (sl) sl.textContent = tx('性别', 'Sex');
+    const el = $('#funEthLabel'); if (el) el.textContent = tx('种族', 'Ethnicity');
+    const sel = $('#birthEthSelect');
+    if (sel) {
+      sel.innerHTML = ETHS.map(e => `<option value="${e.id}" ${e.id === (STATE.birthEth || 'auto') ? 'selected' : ''}>${e.id === 'auto' ? '🎲 ' : ''}${esc(tx(e.zh, e.en))}</option>`).join('');
+    }
+  }
+  STATE.birthSex = store.get('sex', 'auto');
+  STATE.birthEth = store.get('eth', 'auto');
+  function certEthRow(life) {
+    const body = $('#birthCertBody');
+    if (!body || !life || !life.ethnicity) return;
+    const rows = body.querySelectorAll('.bc-table tr');
+    const sexRow = rows[1];
+    if (!sexRow) return;
+    sexRow.insertAdjacentHTML('afterend', `<tr class="fun-eth-row"><td class="bc-k">${tx('种族', 'Ethnicity')}</td><td class="bc-v">${esc(ethLabel(life.ethnicity))}</td></tr>`);
+  }
+
+  /* ------------------------------------------------------------------
+     8) v6.14：意见反馈 —— 微信二维码
+     ------------------------------------------------------------------ */
+  const QR_SRC = 'assets/wechat-qr.png';
+  function qrBlock() {
+    return `<div class="fun-wechat">
+      <img src="${QR_SRC}" alt="${esc(tx('作者的微信二维码', "Author's WeChat QR code"))}" width="200" height="241" loading="lazy">
+      <div class="fw-text"><b>💬 ${tx('加我微信，直接聊', 'Add me on WeChat')}</b>
+        <span>${tx('有 bug、建议或想看的新玩法，扫码加好友告诉我。', 'Bugs, ideas, new features you want — scan to reach me.')}</span></div>
+    </div>`;
+  }
+  function wechatModal() {
+    let m = $('#funWechatModal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'funWechatModal';
+      m.className = 'modal fun-modal';
+      m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-fun-close]')) m.hidden = true; });
+      document.body.appendChild(m);
+    }
+    m.innerHTML = `<div class="modal-card fun-card fun-wechat-card">
+      <div class="fun-card-head"><h3>💌 ${tx('意见反馈', 'Feedback')}</h3><button class="ghost" data-fun-close>✕</button></div>
+      ${qrBlock()}
+    </div>`;
+    m.hidden = false;
+  }
+  const _fb = window.renderFeedbackModal;
+  if (typeof _fb === 'function') {
+    window.renderFeedbackModal = function () {
+      _fb.apply(this, arguments);
+      const help = document.querySelector('#feedbackModal .modal-help');
+      if (help) help.insertAdjacentHTML('beforebegin', qrBlock());
+    };
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startHans);
   else startHans();
 
   // 给测试 / 除错用
-  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal };
+  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName };
 })();

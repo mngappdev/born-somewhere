@@ -112,3 +112,27 @@ html[lang="zh-Hans"] {
 .mode-block .seg { flex-wrap: wrap; max-width: 100%; }
 /* 动态提示取代静态的 cta-hint（两句意思重复） */
 .cta-row .fun-pick-hint + .cta-hint { display: none; }
+
+/* v6.14：主页标题、性别/种族选择、微信反馈 */
+.hero-brand {
+  display: inline-block; margin: 0 0 6px; padding: 4px 14px; border-radius: 99px;
+  background: var(--accent); color: #fff; font-family: var(--serif); font-weight: 700;
+  font-size: 20px; letter-spacing: .3em; text-indent: .3em;
+}
+.fun-eth-select {
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; min-height: 38px;
+  background: var(--bg-2); color: var(--ink); max-width: 100%;
+}
+.fun-panel { grid-template-columns: 2fr 1fr 1fr; max-width: 760px; }
+@media (max-width: 640px) { .fun-panel { grid-template-columns: 1fr 1fr; } .fp-daily { grid-column: 1 / -1; } }
+.fun-wechat {
+  display: flex; gap: 16px; align-items: center; margin: 6px 0 14px;
+  padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff;
+}
+.fun-wechat img { width: 160px; height: auto; border-radius: 8px; flex: none; }
+.fw-text { display: flex; flex-direction: column; gap: 6px; color: #333; font-size: 14px; }
+.fw-text b { color: #1aad19; font-size: 16px; }
+.fun-wechat-card { max-width: 440px; }
+.fun-wechat-card .fun-wechat { flex-direction: column; text-align: center; }
+.fun-wechat-card .fun-wechat img { width: min(260px, 100%); }
+@media (max-width: 480px) { .fun-wechat { flex-direction: column; text-align: center; } }

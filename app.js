@@ -23,7 +23,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.13.0';
+const APP_VERSION = '6.14.0';
 const APP_BUILD = '2026-10-23';
 
 const STATE = {
@@ -1365,7 +1365,8 @@ function pickIndianCaste() {
 function newLife(countryCode) {
   const c = countryById(countryCode);
   if (!c) return null;
-  const sex = Math.random() < 0.5 ? 'M' : 'F';
+  // v6.14：可在首頁指定性別（STATE.forceSex 由 fun.js 設定；未指定則 50/50）
+  const sex = (STATE.forceSex === 'M' || STATE.forceSex === 'F') ? STATE.forceSex : (Math.random() < 0.5 ? 'M' : 'F');
   const name = randomName(c, sex);
   // 1in8b.life 風格：出生登記背景
   const fam = generateFamily(countryCode, sex);
@@ -1891,7 +1892,10 @@ function submitFeedback() {
 
 function startLife(countryCode) {
   stopTicker();
-  STATE.life = newLife(countryCode);
+  // v6.14：出生卡預覽的那個人就是接下來要活的人（舊碼會再 newLife 一次，卡上的姓名／性別／父母和實際人生對不上）
+  const certLife = STATE._certLife;
+  STATE._certLife = null;
+  STATE.life = (certLife && certLife.country === countryCode) ? certLife : newLife(countryCode);
   if (!STATE.life) return;
   STATE.life.log.push({ age: 0, kind: 'birth', icon: '👶', text: t('event.birth', '') });
   logLife(t('log.born_in', localize(STATE.life.countryData).name, ''));
@@ -2951,6 +2955,7 @@ function showBirthCertModal(c) {
   const life = newLife(c.id);
   if (!life) return;
   STATE.birthCertCountry = c;
+  STATE.birthCertLife = life;   // v6.14
   const body = $('#birthCertBody');
   if (body) body.innerHTML = buildBirthCertCard(c, life);
   modal.removeAttribute('hidden');
@@ -5117,8 +5122,9 @@ function wire() {
   const birthCertConfirm = $('#birthCertConfirm');
   if (birthCertConfirm) birthCertConfirm.addEventListener('click', () => {
     const c = STATE.birthCertCountry;
+    const certLife = STATE.birthCertLife;
     hideBirthCertModal();
-    if (c) startLife(c.id);
+    if (c) { STATE._certLife = certLife; startLife(c.id); }
   });
   // v5.19：出生卡 modal 的取消按鈕
   const birthCertCancel = $('#birthCertCancel');
