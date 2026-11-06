@@ -502,6 +502,7 @@
         if (ach.length) { ctx.fillStyle = '#7a5a00'; ctx.font = `600 30px ${FONT}`; drawText(ctx, `🏆 ${ach.map(a => a.icon + ' ' + tx(a.zh, a.en)).join('  ')}`, 112, y, W - 224, 44, 2); }
         await footer(ctx, true);
       }
+      cv._kind = kind;
       out.push(cv);
     }
     return out;
@@ -600,6 +601,7 @@
       <input type="file" id="ksFaceFile" accept="image/*" hidden>
       <div class="ks-tabs">
         <button class="ks-tab active" data-ks-tab="photos">📸 ${tx('照片组合 · 朋友圈', 'Photo set')}</button>
+        <button class="ks-tab" data-ks-tab="video">🎬 ${tx('人生影片', 'Videos')}</button>
         <button class="ks-tab" data-ks-tab="album">📖 ${tx('人生相簿 PDF', 'Album (PDF)')}</button>
         <button class="ks-tab" data-ks-tab="record">📒 ${tx('人生纪录册', 'Record book')}</button>
       </div>
@@ -619,7 +621,7 @@
   }
   function activeTab() { return document.querySelector('#ksModal .ks-tab.active')?.dataset.ksTab || 'photos'; }
   function faceChanged() {
-    if (current) { current.photos = null; current.blobs = null; }
+    if (current) { current.photos = null; current.blobs = null; current.videos = null; current.lastVideo = null; }
     const w = $('#ksFaceWrap'); if (w) w.innerHTML = faceBar();
     wireFace();
     renderTab(activeTab());
@@ -650,6 +652,7 @@
     if (tab === 'photos') {
       body.innerHTML = `<div class="ks-loading">${tx('正在制作照片⋯', 'Making photos…')}</div>`;
       await ensurePhotos();
+      if (activeTab() !== 'photos') return;   // 照片还在做时玩家已切到别的分页（例如从「人生影片」入口打开）
       const wx = isWeChat();
       const urls = current.photos.map(cv => cv.toDataURL('image/jpeg', 0.85));
       const collageUrl = current.collage.toDataURL('image/jpeg', 0.88);
@@ -718,6 +721,8 @@
         ${isWeChat() ? `<p class="ks-warn">${tx('微信内建浏览器不支援列印。请点右上角「⋯」→「在浏览器打开」，或先下载相簿网页档。', 'WeChat\'s browser cannot print. Open in your browser, or download the album HTML.')}</p>` : ''}`;
       $('#ksAlbum').addEventListener('click', async () => { await ensurePhotos(); printAlbum(current.life, current.photos); track('keepsake_album', { mode: 'print' }); });
       $('#ksAlbumHtml').addEventListener('click', async () => { await ensurePhotos(); downloadBlob(new Blob([albumHtml(current.life, current.photos, false)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_album.html`); track('keepsake_album', { mode: 'html' }); });
+    } else if (tab === 'video') {
+      videoTab(body);
     } else if (tab === 'record') {
       const ys = yearly(current.life);
       body.innerHTML = `<p>${tx('一个 HTML 档：逐年表格与图表、家人、做过的抉择与整段人生的纪录；另附逐年表格 CSV（可用 Excel / Numbers 打开）。', 'One HTML file with the yearly table and charts, family, choices and the full record, plus a CSV of the yearly table.')}</p>
@@ -726,6 +731,315 @@
       $('#ksRecord').addEventListener('click', () => { downloadBlob(new Blob([recordHtml(current.life)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_record.html`); track('keepsake_record', { fmt: 'html' }); });
       $('#ksCsv').addEventListener('click', () => { downloadBlob(new Blob(['﻿' + csv(current.life)], { type: 'text/csv;charset=utf-8' }), `${fileBase(current.life)}_yearly.csv`); track('keepsake_record', { fmt: 'csv' }); });
     }
+  }
+
+  /* ---------------- v6.23：人生影片（canvas 动画 + MediaRecorder，本机录制，不上传） ----------------
+     三种：人生跑马灯（约 100 秒）、20 秒预告、片尾彩蛋短片（9 秒）。
+     画面 720×1280 直式 30fps；配乐沿用 fun.js 的原创旋律（依出生国）；
+     支援 MP4 的浏览器（Safari、新版 Chrome/Edge）直接出 MP4，其余出 WebM。 */
+  const VW = 720, VH = 1280, FPS = 30;
+  const VIDEO_MODES = {
+    full: { icon: '🎞️', zh: '人生跑马灯影片', en: 'Life reel', intro: 6, slide: 9.5, egg: 9, fade: 0.7 },
+    teaser: { icon: '⚡', zh: '20 秒预告', en: '20-second teaser', intro: 2, slide: 1.5, egg: 4.5, fade: 0.2 },
+    egg: { icon: '🎁', zh: '片尾彩蛋短片', en: 'Easter-egg clip', intro: 0, slide: 0, egg: 9, fade: 0 },
+  };
+  function pickMime() {
+    if (typeof MediaRecorder === 'undefined' || !HTMLCanvasElement.prototype.captureStream) return null;
+    const list = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    for (const m of list) { try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (e) { /* ignore */ } }
+    return '';
+  }
+  const ease = (p) => 1 - Math.pow(1 - Math.max(0, Math.min(1, p)), 3);
+  const cut = (s, n) => { const a = Array.from(String(s || '')); return a.length > n ? a.slice(0, n).join('') + '…' : a.join(''); };
+  function slideMeta(life, kind) {
+    const s = summary(life);
+    const st = STAGES.find(x => x.id === kind);
+    if (st) {
+      const a1 = Math.min(st.max, s.age);
+      const evs = stageEvents(life, st, 8);
+      return { title: `${st.icon} ${tx(st.zh, st.en)}`, sub: `${st.min} – ${a1} ${tx('岁', 'years')}`, a0: st.min, a1, ticker: evs.length ? evs.map(e => `${e.age}${tx('岁', 'y')} · ${cut(e.text, 46)}`) : [tx(st.zh, st.en)] };
+    }
+    if (kind === 'cover') return { title: tx('这一生', 'This life'), sub: s.name, a0: 0, a1: 0, ticker: [`${s.c.flag} ${s.loc.name}`, `${fmtBirth(life)} – ${s.dy}`, `${s.sex}${s.eth ? ' · ' + s.eth : ''}`, tx(`享年 ${s.age} 岁`, `Lived to ${s.age}`)] };
+    if (kind === 'birth') return { title: `👶 ${tx('出生', 'Birth')}`, sub: `${fmtBirth(life)} · ${s.c.flag} ${s.loc.name}`, a0: 0, a1: 0, ticker: familyRows(life).slice(0, 6).map(r => `${r.rel} · ${r.name}`).concat([tx('欢迎来到这个世界', 'Welcome to the world')]) };
+    if (kind === 'data') {
+      const st2 = life.stats || {};
+      return { title: `📈 ${tx('一生的轨迹', 'The trajectory')}`, sub: tx('健康 · 幸福 · 知识 · 人际', 'Health · happiness · knowledge · people'), a0: 0, a1: 0, ticker: [tx(`净资产 US$ ${Math.round(st2.netAssets || 0).toLocaleString()}`, `Net worth US$ ${Math.round(st2.netAssets || 0).toLocaleString()}`), tx(`做过 ${(life.decisions || []).filter(d => d.key !== 'skipped').length} 个抉择`, `${(life.decisions || []).length} choices made`), tx(`活了 ${s.age} 年`, `${s.age} years lived`)] };
+    }
+    return { title: `🕯️ ${tx('这一段人生走完了', 'The end of this life')}`, sub: `${s.age} ${tx('岁', 'years')}${s.cause ? ' · ' + s.cause : ''}`, a0: 0, a1: 0, ticker: [tx(`${s.name}，${fmtBirth(life)} – ${s.dy}`, `${s.name}, ${fmtBirth(life)} – ${s.dy}`), tx('谢谢你陪 TA 走完这一生', 'Thank you for living it')] };
+  }
+  function buildSegs(life, photos, mode) {
+    const M = VIDEO_MODES[mode], segs = [];
+    if (M.intro) segs.push({ type: 'intro', dur: M.intro });
+    if (M.slide) photos.forEach(cv => segs.push({ type: 'slide', dur: M.slide, cv, meta: slideMeta(life, cv._kind || '') }));
+    // 彩蛋：抽出「下一世」（依真实出生人数比例，避开这一世的国家）
+    let next = null;
+    for (let i = 0; i < 12 && (!next || next.id === life.country); i++) next = typeof chooseCountry === 'function' ? chooseCountry('baby') : null;
+    const reel = [];
+    for (let i = 0; i < 36; i++) reel.push(COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)]);
+    segs.push({ type: 'egg', dur: M.egg, next: next || countryById('CHN'), reel });
+    return segs;
+  }
+  function vBackdrop(ctx, im) {
+    ctx.fillStyle = '#14101c'; ctx.fillRect(0, 0, VW, VH);
+    if (!im) return;
+    const hasFilter = 'filter' in ctx;
+    ctx.save();
+    if (hasFilter) ctx.filter = 'blur(26px) brightness(0.5)';
+    const h = VH * 1.12, w = h * im.width / im.height;
+    ctx.drawImage(im, (VW - w) / 2, (VH - h) / 2, w, h);
+    ctx.restore();
+    if (!hasFilter) { ctx.fillStyle = 'rgba(10,8,16,.6)'; ctx.fillRect(0, 0, VW, VH); }
+  }
+  function vIntro(ctx, life, lt, dur, mode) {
+    const s = summary(life);
+    const g = ctx.createLinearGradient(0, 0, VW, VH); g.addColorStop(0, '#1d2b4a'); g.addColorStop(1, '#8C1D3C');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    if (mode === 'teaser') {
+      ctx.globalAlpha = ease(lt / 0.5);
+      ctx.fillStyle = '#F39C12'; ctx.font = `800 64px ${FONT}`; ctx.fillText(tx('如果人生重来一次……', 'If you could be born again…'), VW / 2, 600);
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `400 34px ${FONT}`; ctx.fillText(tx(`我投胎到了 ${s.c.flag} ${s.loc.name}`, `I was born in ${s.c.flag} ${s.loc.name}`), VW / 2, 680);
+      ctx.globalAlpha = 1; ctx.textAlign = 'left'; return;
+    }
+    const a = (t0) => ease((lt - t0) / 0.9);
+    ctx.globalAlpha = a(0.2); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 30px ${FONT}`; ctx.fillText(tx('模拟人生 · 一个人的一生', 'Life Simulator · one whole life'), VW / 2, 420);
+    ctx.globalAlpha = a(0.9); ctx.fillStyle = '#fff'; ctx.font = `800 92px ${SERIF}`; ctx.fillText(cut(s.name, 8), VW / 2, 580);
+    ctx.globalAlpha = a(1.7); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `400 36px ${FONT}`; ctx.fillText(`${s.c.flag} ${s.loc.name} · ${fmtBirth(life)} – ${s.dy}`, VW / 2, 660);
+    ctx.globalAlpha = a(2.8); ctx.fillStyle = '#F39C12'; ctx.font = `700 40px ${FONT}`; ctx.fillText(tx(`${s.age} 年的一生，从这里开始`, `${s.age} years, starting now`), VW / 2, 800);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  }
+  function vSlide(ctx, sg, lt, mode) {
+    const im = sg.cv, m = sg.meta, dur = sg.dur, p = Math.min(1, lt / dur);
+    vBackdrop(ctx, im);
+    const pw = 640, ph = Math.round(pw * im.height / im.width), px = (VW - pw) / 2, py = 176;
+    const z = mode === 'teaser' ? 1.1 - 0.1 * ease(p * 1.6) : 1.0 + 0.06 * p;
+    const zw = pw * z, zh = ph * z;
+    ctx.save(); rr(ctx, px, py, pw, ph, 22); ctx.clip();
+    ctx.drawImage(im, px - (zw - pw) / 2, py - (zh - ph) * (mode === 'full' ? p : 0.5), zw, zh);
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff'; ctx.font = `800 50px ${FONT}`; ctx.fillText(m.title, 40, 96);
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.font = `400 28px ${FONT}`; ctx.fillText(cut(m.sub, 24), 40, 142);
+    if (m.a1 > 0) {
+      const age = Math.round(m.a0 + (m.a1 - m.a0) * Math.min(1, p * 1.15));
+      ctx.textAlign = 'right'; ctx.fillStyle = '#F39C12'; ctx.font = `800 72px ${FONT}`; ctx.fillText(String(age), VW - 40, 104);
+      ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.font = `400 24px ${FONT}`; ctx.fillText(tx('岁', 'yrs'), VW - 40, 142); ctx.textAlign = 'left';
+    }
+    // 跑马灯字幕
+    const ty = py + ph + 34, th = 92;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(0, ty, VW, th);
+    ctx.fillStyle = '#F39C12'; ctx.fillRect(0, ty, 8, th);
+    ctx.save(); ctx.beginPath(); ctx.rect(8, ty, VW - 8, th); ctx.clip();
+    ctx.fillStyle = '#fff'; ctx.font = `500 34px ${FONT}`;
+    if (mode === 'full') {
+      const text = m.ticker.join('　　◆　　');
+      const tw = ctx.measureText(text).width;
+      const speed = Math.max(110, (tw + VW) / (dur - 0.3));
+      ctx.fillText(text, VW - lt * speed, ty + 58);
+    } else {
+      ctx.fillText(cut(m.ticker[0], 18), 32, ty + 58);
+    }
+    ctx.restore();
+  }
+  function vEgg(ctx, life, sg, lt, mode) {
+    const dur = sg.dur, spin = dur * 0.5, next = sg.next;
+    const g = ctx.createLinearGradient(0, 0, VW, VH); g.addColorStop(0, '#2B1B3D'); g.addColorStop(1, '#8C1D3C');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#F39C12'; ctx.font = `800 40px ${FONT}`; ctx.fillText(tx('🎁 片尾彩蛋', '🎁 Easter egg'), VW / 2, 170);
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `500 36px ${FONT}`; ctx.fillText(tx('如果再投胎一次，下一世会在……', 'Born again, the next life would be in…'), VW / 2, 236);
+    // 转盘框
+    const bx = 70, by = 330, bw = VW - 140, bh = 330;
+    ctx.fillStyle = 'rgba(255,252,245,.97)'; rr(ctx, bx, by, bw, bh, 28); ctx.fill();
+    let c = next, pop = 1;
+    if (lt < spin) {
+      const idx = Math.min(sg.reel.length - 1, Math.floor(ease(lt / spin) * sg.reel.length));
+      c = sg.reel[idx] || next;
+    } else pop = 1 + 0.25 * Math.max(0, 1 - (lt - spin) / 0.35);
+    const name = c ? localize(c).name : '';
+    ctx.save(); ctx.translate(VW / 2, by + bh / 2); ctx.scale(pop, pop);
+    ctx.font = `120px ${FONT}`; ctx.fillStyle = '#222'; ctx.fillText(c ? c.flag : '', 0, -10);
+    ctx.font = `800 58px ${FONT}`; ctx.fillStyle = '#2B1B3D'; ctx.fillText(cut(name, 9), 0, 100);
+    ctx.restore();
+    if (lt >= spin) {
+      const a = ease((lt - spin) / 0.6);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#fff'; ctx.font = `700 40px ${FONT}`; ctx.fillText(tx(`下一世：${next.flag} ${localize(next).name}`, `Next life: ${next.flag} ${localize(next).name}`), VW / 2, 740);
+      ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = `400 30px ${FONT}`; ctx.fillText(tx(`预期寿命约 ${Math.round(effectiveLe(next, {}))} 岁 · 会过得怎样，没人知道`, `Life expectancy ~${Math.round(effectiveLe(next, {}))} · nobody knows how it goes`), VW / 2, 792);
+      const qa = ease((lt - spin - 0.6) / 0.6);
+      ctx.globalAlpha = qa;
+      ctx.fillStyle = 'rgba(255,252,245,.97)'; rr(ctx, 70, 860, VW - 140, 330, 26); ctx.fill();
+      qr(ctx, SHARE_URL(), VW - 70 - 30 - 250, 900, 250);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#2B1B3D'; ctx.font = `800 40px ${FONT}`; ctx.fillText(tx('你呢？', 'Your turn?'), 110, 950);
+      ctx.fillStyle = '#8C1D3C'; ctx.font = `600 28px ${FONT}`;
+      drawText(ctx, tx('扫码抽一次命运，抽到哪里都不能重来', 'Scan to roll your fate. No do-overs.'), 110, 980, 230, 40, 3);
+      ctx.fillStyle = '#888'; ctx.font = `400 22px ${FONT}`; ctx.fillText(SITE().replace(/^https?:\/\//, '').replace(/\/$/, ''), 110, 1160);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'left';
+  }
+  function vChrome(ctx, t, total) {
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(40, VH - 70, VW - 80, 4);
+    ctx.fillStyle = '#F39C12'; ctx.fillRect(40, VH - 70, (VW - 80) * Math.min(1, t / total), 4);
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.font = `400 22px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`${tx('模拟人生', 'Life Simulator')} · ${SITE().replace(/^https?:\/\//, '').replace(/\/$/, '')}`, 40, VH - 32);
+  }
+  function drawSeg(ctx, life, sg, lt, mode) {
+    if (sg.type === 'intro') vIntro(ctx, life, lt, sg.dur, mode);
+    else if (sg.type === 'slide') vSlide(ctx, sg, lt, mode);
+    else vEgg(ctx, life, sg, lt, mode);
+  }
+  function drawVideoFrame(ctx, life, segs, t, mode) {
+    const total = segs.reduce((a, s) => a + s.dur, 0), fade = VIDEO_MODES[mode].fade;
+    let acc = 0, i = 0;
+    while (i < segs.length - 1 && t >= acc + segs[i].dur) { acc += segs[i].dur; i++; }
+    const lt = t - acc;
+    ctx.globalAlpha = 1;
+    if (i > 0 && fade && lt < fade) {
+      drawSeg(ctx, life, segs[i - 1], segs[i - 1].dur, mode);
+      ctx.save(); ctx.globalAlpha = lt / fade; drawSeg(ctx, life, segs[i], lt, mode); ctx.restore();
+    } else drawSeg(ctx, life, segs[i], lt, mode);
+    ctx.globalAlpha = 1;
+    vChrome(ctx, t, total);
+  }
+  function scoreInto(actx, dest, code, dur) {
+    const T = window.BornFun && BornFun.TRACKS; if (!T) return;
+    const key = (BornFun.trackFor && BornFun.trackFor(code)) || (T[code] ? code : 'SGP');
+    const sc = T[key] || T.SGP;
+    const master = actx.createGain(); master.connect(dest);
+    const t0 = actx.currentTime + 0.05;
+    master.gain.setValueAtTime(0, t0); master.gain.linearRampToValueAtTime(1, t0 + 1);
+    master.gain.setValueAtTime(1, Math.max(t0 + 1, t0 + dur - 2.5)); master.gain.linearRampToValueAtTime(0, t0 + dur);
+    const note = (midi, time, len, gain) => {
+      const osc = actx.createOscillator(), env = actx.createGain();
+      osc.type = sc.wave; osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+      env.gain.setValueAtTime(0, time); env.gain.linearRampToValueAtTime(gain, time + 0.2);
+      env.gain.exponentialRampToValueAtTime(Math.max(0.00001, gain * 0.5), time + len * 0.65); env.gain.linearRampToValueAtTime(0, time + len);
+      osc.connect(env).connect(master); osc.start(time); osc.stop(time + len + 0.02);
+    };
+    const beat = dur < 30 ? sc.beat * 0.75 : sc.beat;
+    for (let t = t0, step = 0; t < t0 + dur; t += beat, step = (step + 1) % 16) {
+      if (step % 4 === 0) sc.chords[Math.floor(step / 4) % 4].forEach(n => note(sc.root + n, t, beat * 4, 0.07));
+      note(sc.notes[step], t, beat * 1.8, 0.16);
+    }
+  }
+  async function recordVideo(life, photos, mode, cv, onProgress, signal) {
+    const segs = buildSegs(life, photos, mode);
+    const total = segs.reduce((a, s) => a + s.dur, 0);
+    const ctx = cv.getContext('2d');
+    drawVideoFrame(ctx, life, segs, 0, mode);
+    const stream = cv.captureStream(FPS);
+    let actx = null;
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      await actx.resume();
+      const dest = actx.createMediaStreamDestination();
+      scoreInto(actx, dest, life.country, total);
+      dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
+    } catch (e) { actx = null; }
+    const mime = pickMime();
+    let rec;
+    try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 5e6 } : { videoBitsPerSecond: 5e6 }); } catch (e) { rec = new MediaRecorder(stream); }
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(res => { rec.onstop = res; });
+    rec.start(1000);
+    const t0 = performance.now();
+    await new Promise(res => {
+      const step = () => {
+        if (signal && signal.aborted) return res();
+        const t = (performance.now() - t0) / 1000;
+        if (t >= total) { drawVideoFrame(ctx, life, segs, total - 0.001, mode); return setTimeout(res, 120); }
+        drawVideoFrame(ctx, life, segs, t, mode);
+        onProgress && onProgress(t / total, total);
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    rec.stop(); await stopped;
+    stream.getTracks().forEach(tr => tr.stop());
+    if (actx) actx.close().catch(() => {});
+    if (signal && signal.aborted) return null;
+    const type = (rec.mimeType || mime || 'video/webm').split(';')[0] || 'video/webm';
+    return { blob: new Blob(chunks, { type }), ext: /mp4/.test(type) ? 'mp4' : 'webm', total };
+  }
+  function videoTab(body) {
+    const mime = pickMime();
+    const wx = isWeChat();
+    const n = current.photos ? current.photos.length : 9;
+    const dur = (k) => { const M = VIDEO_MODES[k]; return Math.round(M.intro + M.slide * n + M.egg); };
+    const desc = {
+      full: tx(`约 ${dur('full')} 秒 · ${n} 个片段 + 跑马灯字幕 + 原创配乐 + 片尾彩蛋`, `~${dur('full')}s · ${n} scenes, ticker captions, original score, easter egg`),
+      teaser: tx('20 秒快剪 + 结尾钩子，适合视频号、抖音、朋友圈', '20s quick cuts with a hook ending'),
+      egg: tx('9 秒 · 抽出「下一世」出生在哪里，可单独发或当片尾', '9s · rolls your "next life"'),
+    };
+    body.innerHTML = `<p>${tx('用这一生的照片做成直式影片（9:16），附原创配乐。全部在你的装置上录制，不会上传。', 'Turn this life into a vertical video (9:16) with an original score. Recorded on your device; nothing is uploaded.')}</p>
+      ${mime === null ? `<p class="ks-warn">${wx ? tx('微信内建浏览器无法录制影片。请点右上角「⋯」→「在浏览器打开」。', 'WeChat\'s browser cannot record video. Open this page in your browser.') : tx('这个浏览器不支援录制影片，请改用新版 Chrome、Edge 或 Safari。', 'This browser cannot record video. Try a recent Chrome, Edge or Safari.')}</p>` : ''}
+      <div class="ks-vids">${Object.keys(VIDEO_MODES).map(k => `<button class="ks-vid-b" data-ks-vid="${k}" type="button" ${mime === null ? 'disabled' : ''}><b>${VIDEO_MODES[k].icon} ${tx(VIDEO_MODES[k].zh, VIDEO_MODES[k].en)}</b><span>${desc[k]}</span></button>`).join('')}</div>
+      <div id="ksVidStage" class="ks-vid-stage"></div>`;
+    body.querySelectorAll('[data-ks-vid]').forEach(b => b.addEventListener('click', () => runVideo(b.dataset.ksVid)));
+    if (current.lastVideo && current.videos && current.videos[current.lastVideo]) showVideo(current.lastVideo);
+  }
+  let vidAbort = null;
+  async function runVideo(mode) {
+    const stage = $('#ksVidStage'); if (!stage) return;
+    current.videos = current.videos || {};
+    if (current.videos[mode]) return showVideo(mode);
+    if (vidAbort) return;
+    stage.innerHTML = `<div class="ks-loading">${tx('正在准备画面⋯', 'Preparing…')}</div>`;
+    await ensurePhotos();
+    await loadImg('assets/zenmatrix-logo.jpg');
+    const life = current.life;
+    const cv = document.createElement('canvas'); cv.width = VW; cv.height = VH; cv.className = 'ks-vid-canvas';
+    stage.innerHTML = `<div class="ks-vid-rec"><div class="ks-vid-frame"></div>
+      <div class="ks-vid-side"><b>🔴 ${tx('录制中', 'Recording')} · ${tx(VIDEO_MODES[mode].zh, VIDEO_MODES[mode].en)}</b>
+      <div class="ks-prog"><i id="ksVidBar"></i></div><span id="ksVidTime" class="muted"></span>
+      <p class="muted">${tx('影片是即时录制的，请保持这个画面开启、不要切换 App 或锁屏。', 'Recording in real time. Keep this screen open.')}</p>
+      <button class="ghost" id="ksVidCancel" type="button">${tx('取消', 'Cancel')}</button></div></div>`;
+    $('.ks-vid-frame', stage).appendChild(cv);
+    document.querySelectorAll('[data-ks-vid]').forEach(b => { b.disabled = true; });
+    vidAbort = new AbortController();
+    $('#ksVidCancel').addEventListener('click', () => vidAbort && vidAbort.abort());
+    track('keepsake_video', { mode, step: 'start' });
+    let res = null;
+    try {
+      res = await recordVideo(life, current.photos, mode, cv, (p, total) => {
+        const bar = $('#ksVidBar'); if (bar) bar.style.width = (p * 100).toFixed(1) + '%';
+        const tm = $('#ksVidTime'); if (tm) tm.textContent = tx(`还剩约 ${Math.max(0, Math.ceil(total * (1 - p)))} 秒`, `${Math.max(0, Math.ceil(total * (1 - p)))}s left`);
+      }, vidAbort.signal);
+    } catch (e) { res = null; stage.innerHTML = `<p class="ks-warn">${tx('录制失败：', 'Recording failed: ')}${esc(e && e.message || e)}</p>`; }
+    vidAbort = null;
+    document.querySelectorAll('[data-ks-vid]').forEach(b => { b.disabled = false; });
+    if (!res || !current || current.life !== life) { if (!res && stage.isConnected && !stage.querySelector('.ks-warn')) stage.innerHTML = ''; return; }
+    current.videos[mode] = { ...res, url: URL.createObjectURL(res.blob) };
+    track('keepsake_video', { mode, step: 'done', ext: res.ext, sec: Math.round(res.total) });
+    showVideo(mode);
+  }
+  function showVideo(mode) {
+    const v = current.videos && current.videos[mode]; const stage = $('#ksVidStage');
+    if (!v || !stage) return;
+    current.lastVideo = mode;
+    const wx = isWeChat();
+    const name = `${fileBase(current.life)}_${mode}.${v.ext}`;
+    const file = new File([v.blob], name, { type: v.blob.type });
+    const canShare = (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { return false; } })();
+    stage.innerHTML = `<div class="ks-vid-done">
+      <video src="${v.url}" controls playsinline preload="metadata"></video>
+      <div class="ks-vid-side"><b>✅ ${tx(VIDEO_MODES[mode].zh, VIDEO_MODES[mode].en)} · ${Math.round(v.total)} ${tx('秒', 's')} · ${v.ext.toUpperCase()}</b>
+        <div class="ks-actions">
+          ${canShare ? `<button class="primary" id="ksVidShare" type="button">💚 ${tx('分享影片', 'Share video')}</button>` : ''}
+          <button class="${canShare ? 'ghost' : 'primary'}" id="ksVidDl" type="button">⬇️ ${tx('下载影片', 'Download')}</button>
+          <button class="ghost" id="ksVidCap" type="button">📋 ${tx('复制文案', 'Copy caption')}</button>
+        </div>
+        <p class="muted">${wx ? tx('微信内无法直接存影片：点右上角「⋯」→「在浏览器打开」再下载。', 'In WeChat, open in your browser to save the video.') : v.ext === 'webm' ? tx('这是 WebM 格式；电脑可直接播放，要发微信视频号可先用剪映等 App 转成 MP4。', 'This is WebM. Convert to MP4 if your app needs it.') : tx('存到相册后，可发朋友圈、视频号、抖音、小红书。', 'Save it, then post to Moments, Channels, TikTok, etc.')}</p>
+      </div></div>`;
+    $('#ksVidDl').addEventListener('click', () => { downloadBlob(v.blob, name); track('keepsake_video', { mode, step: 'download' }); });
+    $('#ksVidCap').addEventListener('click', async () => { const ok = await copyText(H(caption(current.life))); toast(ok ? tx('文案已复制', 'Caption copied') : tx('复制失败', 'Copy failed')); });
+    $('#ksVidShare')?.addEventListener('click', async () => {
+      const cap = H(caption(current.life)); copyText(cap);
+      try { await navigator.share({ files: [file], text: cap, title: tx('模拟人生', 'Life Simulator') }); track('keepsake_video', { mode, step: 'share' }); } catch (e) { /* cancelled */ }
+    });
   }
 
   /* ---------------- 相簿（列印 / PDF） ---------------- */
@@ -880,6 +1194,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
         <div class="ks-end-t">🎁 ${tx('珍藏这段人生', 'Keep this life')}</div>
         <div class="ks-end-btns">
           <button class="primary" data-ks-open="photos" type="button">💚 ${tx('九宫格 · 发朋友圈', '9 photos · Moments')}</button>
+          <button class="ghost" data-ks-open="video" type="button">🎬 ${tx('人生影片', 'Life video')}</button>
           <button class="ghost" data-ks-open="album" type="button">📖 ${tx('人生相簿 PDF', 'Album PDF')}</button>
           <button class="ghost" data-ks-open="record" type="button">📒 ${tx('人生纪录册', 'Record book')}</button>
         </div></div>`);
@@ -900,10 +1215,10 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
       _renderShelf.apply(this, arguments);
       try {
         const sh = $('#view-shelf');
-        if (sh && !$('#ksShelfBtn')) sh.insertAdjacentHTML('afterbegin', `<div class="ks-shelf"><button class="ghost" id="ksShelfBtn" data-ks-open="photos" type="button">🎁 ${tx('用前世纪录做珍藏（九宫格 / 相簿 / 纪录册）', 'Make keepsakes from past lives')}</button></div>`);
+        if (sh && !$('#ksShelfBtn')) sh.insertAdjacentHTML('afterbegin', `<div class="ks-shelf"><button class="ghost" id="ksShelfBtn" data-ks-open="photos" type="button">🎁 ${tx('用前世纪录做珍藏（九宫格 / 影片 / 相簿 / 纪录册）', 'Make keepsakes from past lives')}</button></div>`);
       } catch (err) { /* ignore */ }
     };
   }
 
-  window.BornKeepsake = { openKeepsake, makePhotos, recordHtml, albumHtml, csv, caption };
+  window.BornKeepsake = { openKeepsake, makePhotos, recordVideo, buildSegs, drawVideoFrame, pickMime, recordHtml, albumHtml, csv, caption };
 })();

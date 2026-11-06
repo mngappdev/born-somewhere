@@ -1433,5 +1433,5 @@
     } catch (e) { /* ignore */ }
   };
 
-  window.BornFun = { causeCard, CAUSE_INFO, rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
+  window.BornFun = { trackFor, causeCard, CAUSE_INFO, rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
 })();

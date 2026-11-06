@@ -265,3 +265,15 @@ body.theme-dark .zm-go { color: #F5B041; }
 .fun-cause ul { margin: 0; padding-left: 20px; font-size: 14px; }
 .fun-cause ul.fun-cause-tips { list-style: none; padding-left: 0; }
 .fun-cause-note { font-size: 12px; margin: 10px 0 0; }
+/* v6.23：人生影片 */
+.ks-vids { display: grid; gap: 8px; margin: 10px 0; }
+.ks-vid-b { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); }
+.ks-vid-b b { font-size: 15px; color: var(--ink); }
+.ks-vid-b span { font-size: 12px; color: var(--ink-3); }
+.ks-vid-b:hover:not([disabled]) { border-color: #F39C12; }
+.ks-vid-b[disabled] { opacity: .5; cursor: not-allowed; }
+.ks-vid-rec, .ks-vid-done { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 8px; }
+.ks-vid-frame canvas, .ks-vid-done video { width: 200px; aspect-ratio: 9 / 16; border-radius: 10px; background: #000; display: block; }
+.ks-vid-side { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.ks-prog { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.ks-prog i { display: block; height: 100%; width: 0; background: #F39C12; transition: width .3s linear; }
