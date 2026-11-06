@@ -602,6 +602,7 @@
       <div class="ks-tabs">
         <button class="ks-tab active" data-ks-tab="photos">📸 ${tx('照片组合 · 朋友圈', 'Photo set')}</button>
         <button class="ks-tab" data-ks-tab="video">🎬 ${tx('人生影片', 'Videos')}</button>
+        <button class="ks-tab" data-ks-tab="wish">🌙 ${tx('未竟的心愿', 'Unfinished wish')}</button>
         <button class="ks-tab" data-ks-tab="album">📖 ${tx('人生相簿 PDF', 'Album (PDF)')}</button>
         <button class="ks-tab" data-ks-tab="record">📒 ${tx('人生纪录册', 'Record book')}</button>
       </div>
@@ -719,8 +720,10 @@
         <ol class="ks-steps"><li>${tx('按下「制作相簿」，会打开列印视窗', 'Press "Make album" to open the print dialog')}</li><li>${tx('目的地选「另存为 PDF」（建议纸张 A5 或 A4、开启背景图形）', 'Choose "Save as PDF" (A5/A4, background graphics on)')}</li></ol>
         <div class="ks-actions"><button class="primary" id="ksAlbum" type="button">📖 ${tx('制作相簿', 'Make album')}</button><button class="ghost" id="ksAlbumHtml" type="button">⬇️ ${tx('下载相簿网页档', 'Download album HTML')}</button></div>
         ${isWeChat() ? `<p class="ks-warn">${tx('微信内建浏览器不支援列印。请点右上角「⋯」→「在浏览器打开」，或先下载相簿网页档。', 'WeChat\'s browser cannot print. Open in your browser, or download the album HTML.')}</p>` : ''}`;
-      $('#ksAlbum').addEventListener('click', async () => { await ensurePhotos(); printAlbum(current.life, current.photos); track('keepsake_album', { mode: 'print' }); });
-      $('#ksAlbumHtml').addEventListener('click', async () => { await ensurePhotos(); downloadBlob(new Blob([albumHtml(current.life, current.photos, false)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_album.html`); track('keepsake_album', { mode: 'html' }); });
+      $('#ksAlbum').addEventListener('click', async () => { await ensurePhotos(); await ensureWish(); printAlbum(current.life, current.photos); track('keepsake_album', { mode: 'print' }); });
+      $('#ksAlbumHtml').addEventListener('click', async () => { await ensurePhotos(); await ensureWish(); downloadBlob(new Blob([albumHtml(current.life, current.photos, false)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_album.html`); track('keepsake_album', { mode: 'html' }); });
+    } else if (tab === 'wish') {
+      wishTab(body);
     } else if (tab === 'video') {
       videoTab(body);
     } else if (tab === 'record') {
@@ -731,6 +734,249 @@
       $('#ksRecord').addEventListener('click', () => { downloadBlob(new Blob([recordHtml(current.life)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_record.html`); track('keepsake_record', { fmt: 'html' }); });
       $('#ksCsv').addEventListener('click', () => { downloadBlob(new Blob(['﻿' + csv(current.life)], { type: 'text/csv;charset=utf-8' }), `${fileBase(current.life)}_yearly.csv`); track('keepsake_record', { fmt: 'csv' }); });
     }
+  }
+
+  /* ---------------- v6.24：未竟的心愿（画出那段人生不曾有过的一天；程序绘图，不用 AI） ----------------
+     依这一生「缺了什么」挑一个心愿：太早离开 → 上学第一天／二十岁生日；没遇见伴侣 → 海边日落；
+     没有孩子 → 放风筝；走得比预期早 → 一起变老；没上大学 → 毕业典礼；华人 → 回家吃团圆饭；
+     其余 → 去远方看雪／极光／海。用登记编号当种子，同一段人生永远是同一个心愿。 */
+  function seedRng(str) {
+    let h = 1779033703 ^ String(str).length;
+    for (const ch of String(str)) { h = Math.imul(h ^ ch.charCodeAt(0), 3432918353); h = (h << 13) | (h >>> 19); }
+    return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+  }
+  const nmOf = (n) => (typeof n === 'string' ? n : (n && (n.full || n.full_en)) || '');
+  const TROPICAL = new Set(['eap', 'sa', 'ssa', 'lac', 'mena']);
+  const TRIPS = [
+    { id: 'NOR', kind: 'aurora', zh: '去看一次极光', en: 'See the northern lights', line: ['夜空忽然亮起绿色的光，像有人在天上慢慢拉开窗帘。TA 站在雪地里，很久都说不出话。', 'The sky lit up green, like a curtain slowly drawn open. TA stood in the snow, speechless for a long time.'] },
+    { id: 'JPN', kind: 'snow', zh: '去看一场真正的雪', en: 'See real snow fall', line: ['雪一片一片落在肩上。TA 伸出手，接住了人生的第一片雪花，笑得像个孩子。', 'Snow settled on TA\'s shoulders. TA caught the first snowflake of a lifetime and laughed like a child.'] },
+    { id: 'MDV', kind: 'sea', zh: '去看一次蓝得不像真的海', en: 'See a sea too blue to be real', line: ['海水蓝得不像真的。TA 光着脚在沙滩上走了很久，把烦恼一件一件丢进浪里。', 'The water was impossibly blue. TA walked barefoot for hours, dropping every worry into the waves.'] },
+  ];
+  function wishFor(life) {
+    const s = summary(life), st = life.stats || {}, age = s.age;
+    const rnd = seedRng(life.regNumber || s.name);
+    const fam = life.family || {};
+    const mother = nmOf((fam.parents || []).find(p => p.sex === 'F')?.name) || tx('家人', 'family');
+    const father = nmOf((fam.parents || []).find(p => p.sex === 'M')?.name) || tx('家人', 'family');
+    const partner = nmOf(st.partner?.name || fam.partner?.name);
+    const first = (life.name && (life.name.first || life.name.full)) || s.name;
+    const le = typeof effectiveLe === 'function' ? effectiveLe(s.c, life) : (s.c.le || 75);
+    const chinese = life.ethnicity === 'chinese' || ['CHN', 'TWN', 'HKG', 'MAC'].includes(life.country);
+    const kids = (st.kids || fam.kids || []).length;
+    const by = s.by;
+    const cand = [];
+    if (age < 7) cand.push('school');
+    if (age < 20) cand.push('grow');
+    if (age >= 20 && !partner && !st.married) cand.push('love');
+    if (age >= 28 && !kids) cand.push('child');
+    if (age >= 30 && age < le - 8) cand.push('old');
+    if (age >= 22 && (st.education || 0) < 4) cand.push('study');
+    if (chinese && age >= 18) cand.push('reunion');
+    cand.push('travel');
+    const type = cand.length > 1 && rnd() < 0.3 ? cand[1] : cand[0];
+    let trip = TRIPS[Math.floor(rnd() * TRIPS.length)];
+    if (type === 'travel' && TROPICAL.has(s.c.region) && trip.kind === 'sea') trip = TRIPS[rnd() < 0.5 ? 0 : 1];
+    if (trip.id === life.country) trip = TRIPS.find(t => t.id !== life.country);
+    const dest = countryById(trip.id);
+    const destName = dest ? `${dest.flag} ${localize(dest).name}` : '';
+    const W_ = {
+      school: { scene: 'school', y: by + 6, zh: ['上学的第一天', `${by + 6} 年 9 月 1 日早上，${first}背着新书包，紧紧牵着${mother}的手走进校门。回头挥手的时候，一点也不害怕。`], en: ['The first day of school', `On a September morning in ${by + 6}, ${first} walked through the school gate with a brand-new bag, holding ${mother}'s hand, and waved back without a trace of fear.`] },
+      grow: { scene: 'party', y: by + 20, zh: ['过一个平凡的二十岁生日', `${by + 20} 年，${first}二十岁。朋友们挤在小小的房间里唱生日歌，蜡烛一口气就吹灭了，许的愿望谁也不肯说。`], en: ['An ordinary twentieth birthday', `In ${by + 20}, ${first} turned twenty. Friends crowded into a tiny room to sing; the candles went out in one breath, and the wish stayed a secret.`] },
+      love: { scene: 'sunset', y: by + Math.min(27, Math.max(20, age - 1)), zh: ['遇见一个人，一起看一次日落', `${by + Math.min(27, Math.max(20, age - 1))} 年秋天的傍晚，${first}在海边遇见一个笑起来很好看的人。两个人聊了很久，直到太阳沉进海里。后来的故事，本来会很长很长。`], en: ['To meet someone and watch a sunset together', `One autumn evening in ${by + Math.min(27, Math.max(20, age - 1))}, ${first} met someone with a lovely smile by the sea. They talked until the sun sank into the water. The story after that would have been a long one.`] },
+      child: { scene: 'kite', y: by + 36, zh: ['带自己的孩子去放风筝', `${by + 36} 年春天，风刚刚好。${first}牵着孩子跑上山坡，风筝一下子就飞了起来。孩子回头大喊：「再高一点！」`], en: ['To fly a kite with a child of their own', `Spring ${by + 36}, and the wind was just right. ${first} ran up the hill hand in hand with a little one, and the kite leapt into the sky. "Higher!" the child shouted.`] },
+      old: { scene: 'bench', y: by + 80, zh: ['和最重要的人一起慢慢变老', `${by + 80} 年，${first} 80 岁。和${partner || tx('老朋友', 'an old friend')}坐在常去的那张长椅上，看落叶一片一片掉下来。谁也没说话，也不需要说话。`], en: ['To grow old slowly with someone dear', `In ${by + 80}, ${first} is 80, sitting with ${partner || 'an old friend'} on the usual bench, watching the leaves fall one by one. No one speaks; no one needs to.`] },
+      study: { scene: 'grad', y: by + 22, zh: ['穿上学士服的那一天', `${by + 22} 年 6 月，${first}穿上学士服，把帽子用力抛向天空。台下的${mother}和${father}一直在擦眼泪。`], en: ['The day of a graduation gown', `June ${by + 22}: ${first} threw the cap high into the sky, while ${mother} and ${father} kept wiping their eyes.`] },
+      reunion: { scene: 'home', y: by + Math.max(18, age - 1), zh: ['回家吃一顿团圆饭', `${by + Math.max(18, age - 1)} 年除夕，${first}推开家门，饭菜的香味先跑了出来。厨房里有人喊：「洗手吃饭啦！」一家人围着桌子，灯很暖。`], en: ['To come home for a reunion dinner', `New Year's Eve ${by + Math.max(18, age - 1)}. ${first} opened the door and the smell of dinner rushed out. "Wash your hands, food's ready!" The whole family round one table, under a warm light.`] },
+      travel: { scene: trip.kind, y: by + Math.min(40, Math.max(18, age - 1)), zh: [trip.zh, `${by + Math.min(40, Math.max(18, age - 1))} 年冬天，${first}第一次离开${s.loc.name}，飞到${destName}。${trip.line[0]}`], en: [trip.en, `Winter ${by + Math.min(40, Math.max(18, age - 1))}: ${first} left ${s.loc.name} for the first time and flew to ${destName}. ${trip.line[1]}`] },
+    };
+    const w = W_[type];
+    const [title, story] = isZh() ? w.zh : w.en;
+    return { type, scene: w.scene, year: w.y, title, story: isZh() ? story.replace(/TA\s?/g, life.sex === 'F' ? '她' : '他') : story.replace(/(^|[.!?] )TA/g, (m, p) => p + (life.sex === 'F' ? 'She' : 'He')).replace(/TA/g, life.sex === 'F' ? 'she' : 'he'), rnd: seedRng((life.regNumber || '') + type) };
+  }
+  /* 场景绘图：粉彩、柔光、颗粒 */
+  function skyG(ctx, x, y, w, h, mode) {
+    const C = { dawn: ['#ffd9c0', '#bfe0f5'], day: ['#a9d8f5', '#e8f6ff'], sunset: ['#3d2a5c', '#f28c6b', '#ffd59a'], night: ['#0d1430', '#2a2a5e'], autumn: ['#f7d9a8', '#f3eedf'] }[mode];
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    C.forEach((c, i) => g.addColorStop(i / (C.length - 1), c));
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  }
+  function glowDot(ctx, x, y, r, color) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 3);
+    g.addColorStop(0, color); g.addColorStop(0.33, color); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 3, 0, Math.PI * 2); ctx.fill();
+  }
+  function hills(ctx, x, y, w, h, colors, rnd) {
+    colors.forEach((c, i) => {
+      const base = y + h * (0.45 + i * 0.18), amp = 30 + rnd() * 40, ph = rnd() * 6, fr = 0.004 + rnd() * 0.004;
+      ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, y + h);
+      for (let px = 0; px <= w; px += 8) ctx.lineTo(x + px, base - Math.sin(px * fr + ph) * amp - Math.sin(px * fr * 2.3 + ph) * amp * 0.3);
+      ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+    });
+  }
+  function person(ctx, x, base, h, color, o = {}) {
+    const hr = h * 0.13;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, base - h + hr, hr, 0, Math.PI * 2); ctx.fill();
+    const top = base - h + hr * 2.2, bw = h * 0.3;
+    ctx.beginPath(); ctx.moveTo(x - bw * 0.42, top); ctx.lineTo(x + bw * 0.42, top);
+    ctx.quadraticCurveTo(x + bw * 0.75, base - h * 0.2, x + bw * (o.dress ? 0.75 : 0.45), base);
+    ctx.lineTo(x - bw * (o.dress ? 0.75 : 0.45), base); ctx.quadraticCurveTo(x - bw * 0.75, base - h * 0.2, x - bw * 0.42, top); ctx.fill();
+    if (o.hair) { ctx.beginPath(); ctx.arc(x, base - h + hr * 0.9, hr * 1.08, Math.PI, Math.PI * 2); ctx.fill(); }
+    if (o.cane) { ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x + bw * 0.6, base - h * 0.45); ctx.lineTo(x + bw * 0.8, base); ctx.stroke(); }
+    if (o.cap) { ctx.fillStyle = '#222'; ctx.fillRect(x - hr * 1.3, base - h - hr * 0.15, hr * 2.6, hr * 0.35); ctx.fillRect(x - hr * 0.7, base - h + hr * 0.1, hr * 1.4, hr * 0.5); }
+    if (o.bag) { ctx.fillStyle = '#e76f51'; rr(ctx, x - bw * 0.65, top + h * 0.05, bw * 0.5, h * 0.28, 6); ctx.fill(); }
+    return { hand: [x + bw * 0.5, base - h * 0.45], handL: [x - bw * 0.5, base - h * 0.45] };
+  }
+  function holdHands(ctx, a, b, color) { ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + 14, b[0], b[1]); ctx.stroke(); }
+  function tree(ctx, x, base, h, leaf, rnd) {
+    ctx.fillStyle = '#6b4f3a'; ctx.fillRect(x - h * 0.04, base - h * 0.55, h * 0.08, h * 0.55);
+    for (let i = 0; i < 7; i++) { ctx.fillStyle = leaf[i % leaf.length]; ctx.beginPath(); ctx.arc(x + (rnd() - 0.5) * h * 0.5, base - h * 0.65 + (rnd() - 0.5) * h * 0.3, h * (0.16 + rnd() * 0.08), 0, Math.PI * 2); ctx.fill(); }
+  }
+  function house(ctx, x, base, w, wall, roof, lit) {
+    ctx.fillStyle = wall; ctx.fillRect(x, base - w * 0.7, w, w * 0.7);
+    ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(x - w * 0.08, base - w * 0.68); ctx.lineTo(x + w / 2, base - w * 1.08); ctx.lineTo(x + w * 1.08, base - w * 0.68); ctx.fill();
+    if (lit) { glowDot(ctx, x + w * 0.3, base - w * 0.38, w * 0.12, 'rgba(255,214,120,.55)'); }
+    ctx.fillStyle = lit ? '#ffd36b' : '#cfe3f0'; ctx.fillRect(x + w * 0.14, base - w * 0.52, w * 0.32, w * 0.26);
+    ctx.fillStyle = '#7a4b3a'; ctx.fillRect(x + w * 0.62, base - w * 0.42, w * 0.22, w * 0.42);
+    return [x + w * 0.14, base - w * 0.52, w * 0.32, w * 0.26];
+  }
+  function stars(ctx, x, y, w, h, n, rnd) { ctx.fillStyle = '#fff'; for (let i = 0; i < n; i++) { ctx.globalAlpha = 0.4 + rnd() * 0.6; ctx.fillRect(x + rnd() * w, y + rnd() * h * 0.6, 2 + rnd() * 2, 2 + rnd() * 2); } ctx.globalAlpha = 1; }
+  function drawScene(ctx, wish, x, y, w, h) {
+    const r = wish.rnd, gy = y + h * 0.78;
+    ctx.save(); rr(ctx, x, y, w, h, 40); ctx.clip();
+    const sc = wish.scene;
+    if (sc === 'school') {
+      skyG(ctx, x, y, w, h, 'dawn'); glowDot(ctx, x + w * 0.8, y + h * 0.2, 46, 'rgba(255,240,200,.95)');
+      hills(ctx, x, y, w, h, ['#cfe8c8', '#a9d6a0'], r);
+      ctx.fillStyle = '#f4e3c3'; ctx.fillRect(x + w * 0.45, gy - 330, 420, 330); ctx.fillStyle = '#c9584a'; ctx.beginPath(); ctx.moveTo(x + w * 0.43, gy - 326); ctx.lineTo(x + w * 0.45 + 210, gy - 440); ctx.lineTo(x + w * 0.45 + 440, gy - 326); ctx.fill();
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = '#bfe0f5'; ctx.fillRect(x + w * 0.45 + 40 + i * 130, gy - 260, 80, 80); }
+      ctx.strokeStyle = '#6b4f3a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x + w * 0.45 + 210, gy - 440); ctx.lineTo(x + w * 0.45 + 210, gy - 520); ctx.stroke(); ctx.fillStyle = '#e63946'; ctx.fillRect(x + w * 0.45 + 213, gy - 520, 60, 36);
+      ctx.fillStyle = '#8fbf86'; ctx.fillRect(x, gy, w, h);
+      const m = person(ctx, x + w * 0.22, gy + 10, 330, '#5b6b8c', { dress: true, hair: true });
+      const k = person(ctx, x + w * 0.34, gy + 10, 190, '#e9a23b', { bag: true });
+      holdHands(ctx, m.hand, k.handL, '#5b6b8c');
+    } else if (sc === 'party' || sc === 'home') {
+      skyG(ctx, x, y, w, h, 'night'); stars(ctx, x, y, w, h, 90, r); glowDot(ctx, x + w * 0.82, y + h * 0.16, 34, 'rgba(255,248,220,.95)');
+      ctx.fillStyle = '#1b2244'; ctx.fillRect(x, gy, w, h);
+      const win = house(ctx, x + w * 0.18, gy + 4, w * 0.62, '#f1e4cf', '#8C1D3C', true);
+      const [wx, wy, ww, wh] = win;
+      ctx.save(); ctx.beginPath(); ctx.rect(wx, wy, ww, wh); ctx.clip();
+      const n = sc === 'home' ? 4 : 3;
+      for (let i = 0; i < n; i++) person(ctx, wx + ww * (0.18 + i * 0.64 / (n - 1)), wy + wh + 10, wh * (0.85 + (i % 2) * 0.12), 'rgba(90,50,30,.75)', { hair: i % 2 === 0 });
+      if (sc === 'party') { ctx.fillStyle = '#fff'; ctx.fillRect(wx + ww * 0.4, wy + wh * 0.72, ww * 0.2, wh * 0.18); ctx.fillStyle = '#ff7b54'; for (let i = 0; i < 3; i++) ctx.fillRect(wx + ww * (0.44 + i * 0.05), wy + wh * 0.62, 3, wh * 0.1); }
+      else { ctx.fillStyle = 'rgba(140,29,60,.8)'; ctx.fillRect(wx, wy + wh * 0.8, ww, wh * 0.2); }
+      ctx.restore();
+      if (sc === 'party') { ['#ff6b6b', '#ffd93d', '#6bcB77', '#4d96ff'].forEach((c, i) => { const bx = x + w * (0.1 + i * 0.07), byy = y + h * (0.3 + (i % 2) * 0.08); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx, byy + 40); ctx.lineTo(bx + 10, byy + 200); ctx.stroke(); ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(bx, byy, 30, 38, 0, 0, Math.PI * 2); ctx.fill(); }); }
+      else { for (let i = 0; i < 5; i++) { const lx = x + w * (0.08 + i * 0.2), ly = y + h * 0.12 + (i % 2) * 30; glowDot(ctx, lx, ly, 18, 'rgba(230,57,70,.8)'); ctx.fillStyle = '#e63946'; ctx.beginPath(); ctx.ellipse(lx, ly, 24, 30, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ffd36b'; ctx.fillRect(lx - 3, ly + 30, 6, 22); } }
+    } else if (sc === 'sunset') {
+      skyG(ctx, x, y, w, h, 'sunset'); glowDot(ctx, x + w * 0.5, y + h * 0.58, 70, 'rgba(255,200,120,.95)');
+      ctx.fillStyle = '#3e4a7a'; ctx.fillRect(x, y + h * 0.6, w, h);
+      for (let i = 0; i < 9; i++) { ctx.fillStyle = `rgba(255,190,130,${0.5 - i * 0.05})`; ctx.fillRect(x + w * 0.5 - 120 + i * 8, y + h * 0.62 + i * 22, 240 - i * 16, 6); }
+      ctx.fillStyle = '#e8c39e'; ctx.fillRect(x, gy, w, h);
+      const a = person(ctx, x + w * 0.42, gy + 20, 360, '#2b1b3d');
+      const b = person(ctx, x + w * 0.56, gy + 20, 330, '#2b1b3d', { dress: true, hair: true });
+      holdHands(ctx, a.hand, b.handL, '#2b1b3d');
+      ctx.fillStyle = 'rgba(255,120,140,.85)'; ctx.font = `60px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('♥', x + w * 0.49, gy - 420); ctx.textAlign = 'left';
+    } else if (sc === 'kite') {
+      skyG(ctx, x, y, w, h, 'day'); glowDot(ctx, x + w * 0.15, y + h * 0.15, 50, 'rgba(255,250,210,.95)');
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = 'rgba(255,255,255,.85)'; const cx = x + w * (0.3 + i * 0.25), cy = y + h * (0.12 + i * 0.06); [0, 40, 80].forEach(d => { ctx.beginPath(); ctx.arc(cx + d, cy, 34, 0, Math.PI * 2); ctx.fill(); }); }
+      hills(ctx, x, y, w, h, ['#b7e0a5', '#8cc97a'], r);
+      const kx = x + w * 0.72, ky = y + h * 0.26;
+      ctx.fillStyle = '#e63946'; ctx.beginPath(); ctx.moveTo(kx, ky - 60); ctx.lineTo(kx + 46, ky); ctx.lineTo(kx, ky + 70); ctx.lineTo(kx - 46, ky); ctx.fill();
+      ctx.strokeStyle = '#ffd36b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(kx, ky + 70); ctx.quadraticCurveTo(kx + 30, ky + 140, kx - 10, ky + 200); ctx.stroke();
+      const p = person(ctx, x + w * 0.3, gy + 30, 340, '#3d5a80');
+      const k = person(ctx, x + w * 0.44, gy + 30, 200, '#ee6c4d', { hair: true });
+      holdHands(ctx, p.hand, k.handL, '#3d5a80');
+      ctx.strokeStyle = 'rgba(60,60,60,.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(k.hand[0], k.hand[1]); ctx.lineTo(kx, ky + 70); ctx.stroke();
+    } else if (sc === 'bench') {
+      skyG(ctx, x, y, w, h, 'autumn');
+      hills(ctx, x, y, w, h, ['#e9c99a', '#d9a86c'], r);
+      tree(ctx, x + w * 0.78, gy, 560, ['#e76f51', '#f4a261', '#e9c46a'], r);
+      for (let i = 0; i < 26; i++) { ctx.fillStyle = ['#e76f51', '#f4a261', '#e9c46a'][i % 3]; ctx.save(); ctx.translate(x + r() * w, y + h * 0.2 + r() * h * 0.6); ctx.rotate(r() * 6); ctx.fillRect(-8, -4, 16, 8); ctx.restore(); }
+      ctx.fillStyle = '#7a5236'; ctx.fillRect(x + w * 0.2, gy - 120, 420, 20); ctx.fillRect(x + w * 0.2, gy - 60, 420, 18); ctx.fillRect(x + w * 0.22, gy - 60, 14, 60); ctx.fillRect(x + w * 0.2 + 390, gy - 60, 14, 60);
+      person(ctx, x + w * 0.3, gy - 40, 280, '#6d597a', { hair: true, dress: true });
+      person(ctx, x + w * 0.44, gy - 40, 300, '#355070', { cane: true });
+    } else if (sc === 'grad') {
+      skyG(ctx, x, y, w, h, 'day'); glowDot(ctx, x + w * 0.82, y + h * 0.14, 50, 'rgba(255,250,210,.95)');
+      ctx.fillStyle = '#efe3cf'; ctx.fillRect(x + w * 0.1, gy - 420, w * 0.8, 420); ctx.fillStyle = '#d8c7a8'; ctx.beginPath(); ctx.moveTo(x + w * 0.06, gy - 416); ctx.lineTo(x + w * 0.5, gy - 560); ctx.lineTo(x + w * 0.94, gy - 416); ctx.fill();
+      for (let i = 0; i < 6; i++) { ctx.fillStyle = '#cbb894'; ctx.fillRect(x + w * (0.16 + i * 0.13), gy - 400, 34, 400); }
+      ctx.fillStyle = '#9ccf8f'; ctx.fillRect(x, gy, w, h);
+      for (let i = 0; i < 6; i++) { ctx.save(); ctx.translate(x + w * (0.15 + r() * 0.7), y + h * (0.08 + r() * 0.25)); ctx.rotate((r() - 0.5) * 1.2); ctx.fillStyle = '#222'; ctx.fillRect(-36, -8, 72, 14); ctx.fillRect(-18, 4, 36, 18); ctx.restore(); }
+      person(ctx, x + w * 0.5, gy + 30, 380, '#1d3557', { cap: true });
+      person(ctx, x + w * 0.24, gy + 40, 300, '#6d597a', { hair: true, dress: true });
+      person(ctx, x + w * 0.76, gy + 40, 310, '#457b9d');
+    } else if (sc === 'aurora' || sc === 'snow') {
+      skyG(ctx, x, y, w, h, sc === 'aurora' ? 'night' : 'dawn'); if (sc === 'aurora') stars(ctx, x, y, w, h, 80, r);
+      if (sc === 'aurora') { for (let i = 0; i < 4; i++) { const g = ctx.createLinearGradient(0, y + h * 0.1, 0, y + h * 0.55); g.addColorStop(0, 'rgba(120,255,190,0)'); g.addColorStop(0.5, `rgba(${i % 2 ? '120,255,190' : '160,120,255'},.45)`); g.addColorStop(1, 'rgba(120,255,190,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, y + h * (0.3 + i * 0.04)); for (let px = 0; px <= w; px += 10) ctx.lineTo(x + px, y + h * (0.22 + i * 0.05) + Math.sin(px * 0.006 + i) * 60); ctx.lineTo(x + w, y + h * 0.55); ctx.lineTo(x, y + h * 0.55); ctx.fill(); } }
+      for (let i = 0; i < 3; i++) { const mx = x + w * (0.1 + i * 0.35), mh = 300 + r() * 160; ctx.fillStyle = sc === 'aurora' ? '#3a4a7a' : '#9fb3d1'; ctx.beginPath(); ctx.moveTo(mx - 260, gy); ctx.lineTo(mx, gy - mh); ctx.lineTo(mx + 260, gy); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(mx - 80, gy - mh * 0.7); ctx.lineTo(mx, gy - mh); ctx.lineTo(mx + 80, gy - mh * 0.7); ctx.fill(); }
+      ctx.fillStyle = '#f4f7fb'; ctx.fillRect(x, gy - 10, w, h);
+      if (sc === 'snow') { ctx.fillStyle = '#fff'; for (let i = 0; i < 120; i++) { ctx.globalAlpha = 0.6 + r() * 0.4; ctx.beginPath(); ctx.arc(x + r() * w, y + r() * h * 0.8, 3 + r() * 5, 0, Math.PI * 2); ctx.fill(); } ctx.globalAlpha = 1; }
+      person(ctx, x + w * 0.5, gy + 40, 330, sc === 'aurora' ? '#1b1f3a' : '#c0392b', { hair: true });
+    } else {
+      skyG(ctx, x, y, w, h, 'day'); glowDot(ctx, x + w * 0.75, y + h * 0.18, 60, 'rgba(255,250,210,.95)');
+      ctx.fillStyle = '#4fb3d9'; ctx.fillRect(x, y + h * 0.5, w, h); ctx.fillStyle = '#7fd1ea'; ctx.fillRect(x, y + h * 0.5, w, 30);
+      for (let i = 0; i < 6; i++) { ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 4; ctx.beginPath(); for (let px = 0; px <= w; px += 12) ctx.lineTo(x + px, y + h * (0.56 + i * 0.035) + Math.sin(px * 0.03 + i) * 5); ctx.stroke(); }
+      ctx.fillStyle = '#f3dfb3'; ctx.beginPath(); ctx.moveTo(x, gy - 40); ctx.quadraticCurveTo(x + w * 0.5, gy - 120, x + w, gy - 20); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.fill();
+      ctx.fillStyle = '#7a5236'; ctx.fillRect(x + w * 0.12, gy - 420, 18, 380); ['#2a9d8f', '#3fb39f', '#2a9d8f'].forEach((c, i) => { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x + w * 0.12 + 9 + (i - 1) * 90, gy - 420 + Math.abs(i - 1) * 30, 120, 30, (i - 1) * 0.5, 0, Math.PI * 2); ctx.fill(); });
+      person(ctx, x + w * 0.56, gy + 10, 330, '#264653', { hair: true, dress: true });
+    }
+    // 梦境处理：柔光、暗角、颗粒、日期戳
+    const vg = ctx.createRadialGradient(x + w / 2, y + h / 2, h * 0.25, x + w / 2, y + h / 2, h * 0.75);
+    vg.addColorStop(0, 'rgba(255,255,255,0)'); vg.addColorStop(1, 'rgba(40,20,60,.35)');
+    ctx.fillStyle = vg; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(255,240,220,.10)'; ctx.fillRect(x, y, w, h);
+    for (let i = 0; i < 2600; i++) { ctx.fillStyle = r() < 0.5 ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)'; ctx.fillRect(x + r() * w, y + r() * h, 2, 2); }
+    ctx.restore();
+    ctx.save(); ctx.setLineDash([18, 14]); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.85)'; rr(ctx, x + 18, y + 18, w - 36, h - 36, 28); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.font = `600 30px ${FONT}`; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`${wish.year} · ${tx('未曾发生', 'never happened')}`, x + w - 46, y + h - 44); ctx.textAlign = 'left';
+  }
+  async function makeWish(life) {
+    const s = summary(life), wish = wishFor(life);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = HGT;
+    const ctx = cv.getContext('2d');
+    bg(ctx, '#2B1B3D', '#5a3d7a');
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = `600 30px ${FONT}`; ctx.textBaseline = 'top';
+    ctx.fillText(`${tx('模拟人生', 'Life Simulator')} · ${s.c.flag} ${s.name}`, 64, 56);
+    drawScene(ctx, wish, 64, 116, W - 128, 640);
+    paper(ctx, 64, 780, W - 128, HGT - 780 - 40);
+    ctx.textBaseline = 'top'; ctx.fillStyle = '#8C1D3C'; ctx.font = `600 30px ${FONT}`;
+    ctx.fillText(`🌙 ${tx('未竟的心愿', 'An unfinished wish')}`, 112, 816);
+    ctx.fillStyle = '#1a1a1a'; ctx.font = `700 56px ${SERIF}`;
+    let y = drawText(ctx, wish.title, 112, 862, W - 224, 64, 1);
+    ctx.fillStyle = '#444'; ctx.font = `400 30px ${FONT}`;
+    y = drawText(ctx, wish.story, 112, y + 14, W - 224, 44, 4);
+    ctx.fillStyle = '#8a7a6a'; ctx.font = `italic 400 26px ${SERIF}`;
+    ctx.fillText(tx('这一天没有发生。但在另一种可能里，它很美。', 'This day never came. In another version of things, it was beautiful.'), 112, Math.min(1140, y + 12));
+    await footer(ctx, true);
+    cv._kind = 'wish'; cv._wish = wish;
+    return cv;
+  }
+  async function ensureWish() { if (!current.wish) { current.wish = await makeWish(current.life); current.wishBlob = await toBlob(current.wish); } }
+  function wishTab(body) {
+    body.innerHTML = `<div class="ks-loading">${tx('正在画那一天⋯', 'Drawing that day…')}</div>`;
+    (async () => {
+      await ensureWish();
+      if (activeTab() !== 'wish') return;
+      const w = current.wish._wish, url = current.wish.toDataURL('image/jpeg', 0.88);
+      const wx = isWeChat();
+      const file = new File([current.wishBlob], `${fileBase(current.life)}_wish.jpg`, { type: 'image/jpeg' });
+      const canShare = (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { return false; } })();
+      const cap = tx(`《模拟人生》里的${current.life.sex === 'F' ? '她' : '他'}，一辈子没能「${w.title}」。我替${current.life.sex === 'F' ? '她' : '他'}画了出来。你的人生，会缺哪一块？👉 ${SHARE_URL()}`, `In Life Simulator, this life never got to "${w.title}". So I drew it. What would yours be missing? 👉 ${SHARE_URL()}`);
+      body.innerHTML = `<p>${tx('依这一生缺少的经历，画出它不曾有过的一天。', 'A picture of a day this life never had, based on what it missed.')}</p>
+        <div class="ks-one"><img src="${url}" alt="${esc(w.title)}"></div>
+        <div class="ks-caption"><div class="ks-cap-k">${tx('分享文案', 'Caption')}</div><div class="ks-cap-v">${esc(H(cap))}</div></div>
+        <div class="ks-actions">
+          ${canShare && !wx ? `<button class="primary" id="ksWishShare" type="button">💚 ${tx('分享这一天', 'Share')}</button>` : ''}
+          ${wx ? '' : `<button class="${canShare ? 'ghost' : 'primary'}" id="ksWishDl" type="button">⬇️ ${tx('下载图片', 'Download')}</button>`}
+          <button class="ghost" id="ksWishCap" type="button">📋 ${tx('复制文案', 'Copy caption')}</button>
+        </div>
+        ${wx ? `<p class="muted">${tx('长按图片 →「保存图片」，再发朋友圈（文案可先复制）。', 'Long-press the image to save it.')}</p>` : ''}`;
+      track('keepsake_wish', { type: w.type, step: 'view' });
+      $('#ksWishCap').addEventListener('click', async () => { const ok = await copyText(H(cap)); toast(ok ? tx('文案已复制', 'Caption copied') : tx('复制失败', 'Copy failed')); });
+      $('#ksWishDl')?.addEventListener('click', () => { downloadBlob(current.wishBlob, file.name); track('keepsake_wish', { type: w.type, step: 'download' }); });
+      $('#ksWishShare')?.addEventListener('click', async () => { copyText(H(cap)); try { await navigator.share({ files: [file], text: H(cap), title: tx('未竟的心愿', 'An unfinished wish') }); track('keepsake_wish', { type: w.type, step: 'share' }); } catch (e) { /* cancelled */ } });
+    })();
   }
 
   /* ---------------- v6.23：人生影片（canvas 动画 + MediaRecorder，本机录制，不上传） ----------------
@@ -1046,6 +1292,7 @@
   function albumHtml(life, photos, forPrint) {
     const s = summary(life);
     const imgs = photos.map(cv => cv.toDataURL('image/jpeg', 0.88));
+    const wishImg = (current && current.life === life && current.wish) ? current.wish.toDataURL('image/jpeg', 0.88) : '';
     const stagePages = STAGES.filter(st => st.min <= s.age && allStageEvents(life, st).length).map(st => {
       const evs = allStageEvents(life, st);
       const photoIdx = 2 + STAGES.filter(x => x.min <= s.age && allStageEvents(life, x).length).indexOf(st);
@@ -1079,6 +1326,7 @@ table { width: 100%; border-collapse: collapse; font-size: 10.5pt; } td { paddin
 ${stagePages}
 ${choices.length ? `<section class="pg text"><h2>⚖️ ${tx('做过的抉择', 'Choices')}</h2><table>${choices.map(c => `<tr><td><b>${c.age}</b></td><td>${esc(H(c.title))}${c.note ? `<br><small>${esc(H(c.note))}</small>` : ''}</td></tr>`).join('')}</table></section>` : ''}
 ${fam.length ? `<section class="pg text"><h2>👪 ${tx('家人', 'Family')}</h2><table>${fam.map(f => `<tr><td>${esc(f.rel)}</td><td>${esc(H(f.name))}</td></tr>`).join('')}</table></section>` : ''}
+${wishImg ? `<section class="pg"><div class="plate"><img src="${wishImg}" alt=""></div></section>` : ''}
 <section class="pg"><div class="plate"><img src="${imgs[imgs.length - 2] || ''}" alt=""></div></section>
 <section class="pg end"><div class="plate"><img src="${imgs[imgs.length - 1]}" alt=""></div>
 <p class="colophon">${tx('本相簿由《模拟人生》在你的装置上生成 · 人生为虚构模拟 · ZenMatrix · www.zenmatrix.org', 'Made on your device by Life Simulator · A fictional simulation · ZenMatrix · www.zenmatrix.org')}</p></section>
@@ -1195,6 +1443,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
         <div class="ks-end-btns">
           <button class="primary" data-ks-open="photos" type="button">💚 ${tx('九宫格 · 发朋友圈', '9 photos · Moments')}</button>
           <button class="ghost" data-ks-open="video" type="button">🎬 ${tx('人生影片', 'Life video')}</button>
+          <button class="ghost" data-ks-open="wish" type="button">🌙 ${tx('未竟的心愿', 'Unfinished wish')}</button>
           <button class="ghost" data-ks-open="album" type="button">📖 ${tx('人生相簿 PDF', 'Album PDF')}</button>
           <button class="ghost" data-ks-open="record" type="button">📒 ${tx('人生纪录册', 'Record book')}</button>
         </div></div>`);
@@ -1215,10 +1464,10 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
       _renderShelf.apply(this, arguments);
       try {
         const sh = $('#view-shelf');
-        if (sh && !$('#ksShelfBtn')) sh.insertAdjacentHTML('afterbegin', `<div class="ks-shelf"><button class="ghost" id="ksShelfBtn" data-ks-open="photos" type="button">🎁 ${tx('用前世纪录做珍藏（九宫格 / 影片 / 相簿 / 纪录册）', 'Make keepsakes from past lives')}</button></div>`);
+        if (sh && !$('#ksShelfBtn')) sh.insertAdjacentHTML('afterbegin', `<div class="ks-shelf"><button class="ghost" id="ksShelfBtn" data-ks-open="photos" type="button">🎁 ${tx('用前世纪录做珍藏（九宫格 / 影片 / 心愿 / 相簿 / 纪录册）', 'Make keepsakes from past lives')}</button></div>`);
       } catch (err) { /* ignore */ }
     };
   }
 
-  window.BornKeepsake = { openKeepsake, makePhotos, recordVideo, buildSegs, drawVideoFrame, pickMime, recordHtml, albumHtml, csv, caption };
+  window.BornKeepsake = { makeWish, wishFor, openKeepsake, makePhotos, recordVideo, buildSegs, drawVideoFrame, pickMime, recordHtml, albumHtml, csv, caption };
 })();
