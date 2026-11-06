@@ -1,5 +1,5 @@
 /* =====================================================================
-   born-somewhere v6.18 —— 珍藏（keepsake.js）
+   born-somewhere v6.20 —— 珍藏（keepsake.js）
    用走完的人生（或书架上的前世纪录）在本机生成：
    1) 照片组合：9 张 1080×1440 直式图，对应微信朋友圈九宫格；默认流程就是「分享到朋友圈」
    2) 人生相簿：可打印 / 存成 PDF 的书（浏览器列印）
@@ -507,14 +507,56 @@
     return out;
   }
   const toBlob = (cv) => new Promise(res => cv.toBlob(b => res(b), 'image/jpeg', 0.9));
-  function caption(life) {
+
+  /* 九宫格拼成一张：朋友圈 / 系统分享只要一张图，最稳 */
+  async function makeCollage(life, photos) {
     const s = summary(life);
-    const n = (current && current.life === life && current.photos) ? current.photos.length : 9;
-    const per = s.r ? (s.r.per10k >= 10 ? Math.round(s.r.per10k) : s.r.per10k.toFixed(1)) : '';
-    return tx(
-      `我在《模拟人生》里出生在${s.c.flag}${s.loc.name}${s.r ? `（${s.r.tier.id}，全球每 1 万个新生儿只有 ${per} 个）` : ''}，活到了 ${s.age} 岁。这一生的 ${n} 个片段 ↓ 你会出生在哪里？👉 ${SHARE_URL()}`,
-      `In Life Simulator I was born in ${s.c.flag} ${s.loc.name}${s.r ? ` (${s.r.tier.id})` : ''} and lived to ${s.age}. Where would you be born? 👉 ${SHARE_URL()}`
-    );
+    const n = photos.length, cols = 3, rows = Math.ceil(n / cols);
+    const M = 28, G = 12, TOP = 200, BOT = 250;
+    const cw = Math.floor((W - M * 2 - G * (cols - 1)) / cols), ch = Math.round(cw * HGT / W);
+    const CH = TOP + rows * ch + (rows - 1) * G + BOT;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = CH;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, W, CH); g.addColorStop(0, '#2B1B3D'); g.addColorStop(1, '#8C1D3C');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, CH);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#F39C12'; ctx.font = `800 64px ${FONT}`;
+    ctx.fillText(tx('我的另一种人生', 'My other life'), W / 2, 96);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = `400 32px ${FONT}`;
+    ctx.fillText(tx(`投胎到 ${s.c.flag} ${s.loc.name} 之后，发生了这些……`, `Born in ${s.c.flag} ${s.loc.name}, and then…`), W / 2, 156);
+    ctx.textAlign = 'left';
+    photos.forEach((p, i) => {
+      const x = M + (i % cols) * (cw + G), y = TOP + Math.floor(i / cols) * (ch + G);
+      ctx.save(); rr(ctx, x, y, cw, ch, 14); ctx.clip(); ctx.drawImage(p, x, y, cw, ch); ctx.restore();
+    });
+    const fy = CH - BOT + 30;
+    ctx.fillStyle = 'rgba(255,252,245,0.97)'; rr(ctx, M, fy, W - M * 2, BOT - 58, 24); ctx.fill();
+    const qs = BOT - 98;
+    qr(ctx, SHARE_URL(), W - M - 20 - qs, fy + 20, qs);
+    ctx.fillStyle = '#2B1B3D'; ctx.font = `800 40px ${FONT}`;
+    ctx.fillText(tx('下辈子，你会出生在哪里？', 'Where would YOU be born?'), M + 32, fy + 70);
+    ctx.fillStyle = '#8C1D3C'; ctx.font = `600 28px ${FONT}`;
+    ctx.fillText(tx('扫码抽一次命运 · 抽到哪里都不能重来', 'Scan to roll your fate. No do-overs.'), M + 32, fy + 118);
+    ctx.fillStyle = '#888'; ctx.font = `400 24px ${FONT}`;
+    ctx.fillText(SITE().replace(/^https?:\/\//, '').replace(/\/$/, ''), M + 32, fy + 160);
+    return cv;
+  }
+
+  /* 朋友圈文案：不晒数据，留悬念 + 激将 + 低门槛；可「换一条」 */
+  const HOOKS = [
+    (s, u) => [`如果人生能重来，你敢让命运替你选出生地吗？我抽到了${s.c.flag}${s.loc.name}，结局完全没想到……10 分钟，你也来抽一次 👉 ${u}`, `If you could be born again, would you let fate pick where? I got ${s.c.flag} ${s.loc.name} and never saw the ending coming. 10 minutes. Your turn 👉 ${u}`],
+    (s, u) => [`刚在《模拟人生》里过完了一辈子，看到最后一张有点破防 🥲 换个地方出生，人生能差这么多。你会投胎到哪里？👉 ${u}`, `Just lived a whole life in Life Simulator and the last picture got me 🥲 Where would you be born? 👉 ${u}`],
+    (s, u) => [`别问我这辈子过得怎么样，图里都有 😏 先猜猜你下辈子会出生在哪？抽到哪里都不许重来 👉 ${u}`, `Don't ask how my life went, it's all in the pictures 😏 Guess where you'd be born next time. No do-overs 👉 ${u}`],
+    (s, u) => [`全世界每秒有 4 个婴儿出生，下一个会是你吗？我这一生从${s.c.flag}${s.loc.name}开始……来看看你的剧本 👉 ${u}`, `4 babies are born every second. Mine started in ${s.c.flag} ${s.loc.name}… see what script you get 👉 ${u}`],
+    (s, u) => [`测完才发现：同一个人，换个国家出生，命运能差十万八千里。敢不敢来比比谁的人生更精彩？👉 ${u}`, `Same person, different birthplace, totally different fate. Dare to compare lives? 👉 ${u}`],
+  ];
+  let hookIdx = null;
+  function caption(life, next) {
+    const s = summary(life);
+    if (hookIdx === null) { const k = String(life.regNumber || life.name?.full || ''); let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0; hookIdx = h % HOOKS.length; }
+    if (next) hookIdx = (hookIdx + 1) % HOOKS.length;
+    const [zh, en] = HOOKS[hookIdx](s, SHARE_URL());
+    return tx(zh, en);
   }
   async function copyText(t) {
     try { await navigator.clipboard.writeText(t); return true; } catch (e) {
@@ -571,6 +613,7 @@
       renderTab(b.dataset.ksTab);
     }));
     current = { key: sel.key, life: sel.life, photos: null, blobs: null };
+    hookIdx = null;
     wireFace();
     renderTab('photos');
   }
@@ -598,6 +641,8 @@
     if (current.photos) return;
     current.photos = await makePhotos(current.life);
     current.blobs = await Promise.all(current.photos.map(toBlob));
+    current.collage = await makeCollage(current.life, current.photos);
+    current.collageBlob = await toBlob(current.collage);
   }
   async function renderTab(tab) {
     const body = $('#ksBody');
@@ -607,37 +652,63 @@
       await ensurePhotos();
       const wx = isWeChat();
       const urls = current.photos.map(cv => cv.toDataURL('image/jpeg', 0.85));
-      const canFiles = (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([current.blobs[0]], 'a.jpg', { type: 'image/jpeg' })] })); } catch (e) { return false; } })();
+      const collageUrl = current.collage.toDataURL('image/jpeg', 0.88);
+      const canShareFiles = (list) => { try { return !!(navigator.canShare && navigator.canShare({ files: list })); } catch (e) { return false; } };
+      const asFile = (b, i) => new File([b], `${fileBase(current.life)}_${i === 'all' ? 'moments' : i + 1}.jpg`, { type: 'image/jpeg' });
+      let mode = 'one';   // one = 一张拼图（默认，最稳）；nine = 9 张分开
       body.innerHTML = `
-        <div class="ks-grid">${urls.map((u, i) => `<img src="${u}" alt="${i + 1}" data-ks-img="${i}" loading="lazy">`).join('')}</div>
-        <div class="ks-caption"><div class="ks-cap-k">${tx('朋友圈文案', 'Caption')}</div><div class="ks-cap-v" id="ksCap">${esc(H(caption(current.life)))}</div></div>
+        <div class="ks-mode" role="tablist">
+          <button class="ks-mode-b active" data-ks-mode="one" type="button">🧩 ${tx('拼成一张（推荐）', 'One collage (recommended)')}</button>
+          <button class="ks-mode-b" data-ks-mode="nine" type="button">🔲 ${tx(`${urls.length} 张分开`, `${urls.length} separate`)}</button>
+        </div>
+        <div class="ks-one" id="ksOne"><img src="${collageUrl}" alt="${tx('朋友圈拼图', 'Collage')}" data-ks-img="all"></div>
+        <div class="ks-grid" id="ksNine" hidden>${urls.map((u, i) => `<img src="${u}" alt="${i + 1}" data-ks-img="${i}" loading="lazy">`).join('')}</div>
+        <div class="ks-caption"><div class="ks-cap-k">${tx('朋友圈文案', 'Caption')}<button class="ks-cap-next" id="ksCapNext" type="button">🔄 ${tx('换一条', 'Another')}</button></div><div class="ks-cap-v" id="ksCap">${esc(H(caption(current.life)))}</div></div>
         <div class="ks-actions">
           <button class="primary" id="ksShareMoments" type="button">💚 ${tx('分享到微信朋友圈', 'Share to WeChat Moments')}</button>
           <button class="ghost" id="ksCopyCap" type="button">📋 ${tx('复制文案', 'Copy caption')}</button>
-          ${wx ? '' : `<button class="ghost" id="ksDownloadAll" type="button">⬇️ ${tx(`下载 ${urls.length} 张图`, `Download ${urls.length} images`)}</button>`}
+          ${wx ? '' : `<button class="ghost" id="ksDownloadAll" type="button">⬇️ ${tx('下载图片', 'Download')}</button>`}
         </div>
         <div class="ks-how" id="ksHow" hidden></div>`;
       const how = (html) => { const h = $('#ksHow'); h.innerHTML = html; h.hidden = false; };
-      $('#ksCopyCap').addEventListener('click', async () => { const ok = await copyText(H(caption(current.life))); toast(ok ? tx('文案已复制', 'Caption copied') : tx('复制失败，请手动选取', 'Copy failed')); });
-      $('#ksDownloadAll')?.addEventListener('click', () => { current.blobs.forEach((b, i) => setTimeout(() => downloadBlob(b, `${fileBase(current.life)}_${i + 1}.jpg`), i * 350)); track('keepsake_photos_download', { n: current.blobs.length }); });
+      const capText = () => $('#ksCap').textContent;
+      body.querySelectorAll('[data-ks-mode]').forEach(b => b.addEventListener('click', () => {
+        mode = b.dataset.ksMode;
+        body.querySelectorAll('[data-ks-mode]').forEach(x => x.classList.toggle('active', x === b));
+        $('#ksOne').hidden = mode !== 'one'; $('#ksNine').hidden = mode !== 'nine'; $('#ksHow').hidden = true;
+      }));
+      $('#ksCapNext').addEventListener('click', () => { $('#ksCap').textContent = H(caption(current.life, true)); });
+      $('#ksCopyCap').addEventListener('click', async () => { const ok = await copyText(capText()); toast(ok ? tx('文案已复制', 'Caption copied') : tx('复制失败，请手动选取', 'Copy failed')); });
+      const downloadNow = () => {
+        if (mode === 'one') downloadBlob(current.collageBlob, `${fileBase(current.life)}_moments.jpg`);
+        else current.blobs.forEach((b, i) => setTimeout(() => downloadBlob(b, `${fileBase(current.life)}_${i + 1}.jpg`), i * 350));
+      };
+      $('#ksDownloadAll')?.addEventListener('click', () => { downloadNow(); track('keepsake_photos_download', { n: mode === 'one' ? 1 : current.blobs.length, mode }); });
       $('#ksShareMoments').addEventListener('click', async () => {
-        const cap = H(caption(current.life));
-        await copyText(cap);
-        track('keepsake_share_moments', { via: wx ? 'wechat-browser' : canFiles ? 'share-sheet' : 'download' });
+        const cap = capText();
+        const files = mode === 'one' ? [asFile(current.collageBlob, 'all')] : current.blobs.map(asFile);
+        const canFiles = canShareFiles(files);
+        // 先叫起分享选单（要在点击的「使用者手势」内），文案同时复制
+        const copied = copyText(cap);
+        track('keepsake_share_moments', { via: wx ? 'wechat-browser' : canFiles ? 'share-sheet' : 'download', mode });
         if (wx) {
-          how(`<b>${tx('在微信里发朋友圈：', 'In WeChat:')}</b><ol><li>${tx('长按上面每一张图 →「保存图片」', 'Long-press each image → Save')}</li><li>${tx(`回到微信「发现 → 朋友圈」，右上角相机 →「从相册选择」，按顺序选 ${current.photos.length} 张`, 'Moments → camera → choose the photos in order')}</li><li>${tx('文案已经复制好，直接贴上即可', 'The caption is copied — just paste')}</li></ol>`);
+          await copied;
+          how(mode === 'one'
+            ? `<b>${tx('在微信里发朋友圈（10 秒）：', 'In WeChat:')}</b><ol><li>${tx('长按上面的拼图 →「保存图片」', 'Long-press the collage → Save image')}</li><li>${tx('「发现 → 朋友圈」→ 右上角相机 →「从相册选择」这张图', 'Moments → camera → pick that image')}</li><li>${tx('文案已复制，长按输入框「粘贴」就好', 'The caption is copied: just paste')}</li></ol>`
+            : `<b>${tx('在微信里发朋友圈：', 'In WeChat:')}</b><ol><li>${tx('长按每一张图 →「保存图片」', 'Long-press each image → Save')}</li><li>${tx(`「发现 → 朋友圈」→ 相机 →「从相册选择」，按顺序选 ${current.photos.length} 张`, 'Moments → camera → choose the photos in order')}</li><li>${tx('文案已复制，直接粘贴', 'The caption is copied: just paste')}</li></ol>`);
+          $('#ksOne img')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           return;
         }
         if (canFiles) {
-          const files = current.blobs.map((b, i) => new File([b], `${fileBase(current.life)}_${i + 1}.jpg`, { type: 'image/jpeg' }));
           try {
             await navigator.share({ files, text: cap, title: tx('模拟人生', 'Life Simulator') });
-            how(tx('在分享选单选「微信」→「朋友圈」（文案已复制，可直接贴上）。', 'Pick WeChat → Moments in the share sheet. The caption is copied.'));
+            how(tx('在分享选单选「微信」→「朋友圈」。如果文案没带过去，长按输入框「粘贴」即可（已复制）。', 'Pick WeChat → Moments. If the caption is missing, paste it (it is copied).'));
             return;
           } catch (e) { if (e && e.name === 'AbortError') return; }
         }
-        current.blobs.forEach((b, i) => setTimeout(() => downloadBlob(b, `${fileBase(current.life)}_${i + 1}.jpg`), i * 350));
-        how(`<b>${tx('电脑上：', 'On a computer:')}</b> ${tx('9 张图已下载，文案已复制。把图片传到手机（例如「文件传输助手」），再到朋友圈按顺序发布。', 'The images are downloaded and the caption copied. Send them to your phone (e.g. WeChat File Transfer) and post them to Moments in order.')}`);
+        await copied;
+        downloadNow();
+        how(`<b>${tx('电脑上：', 'On a computer:')}</b> ${tx(mode === 'one' ? '拼图已下载，文案已复制。传到手机（例如「文件传输助手」）后发朋友圈即可。' : '图片已下载，文案已复制。传到手机（例如「文件传输助手」）后按顺序发朋友圈。', 'The image is downloaded and the caption copied. Send it to your phone (e.g. WeChat File Transfer) and post it to Moments.')}`);
       });
       body.querySelectorAll('[data-ks-img]').forEach(im => im.addEventListener('click', () => { if (!wx) window.open(im.src, '_blank'); }));
     } else if (tab === 'album') {

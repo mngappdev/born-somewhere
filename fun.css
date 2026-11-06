@@ -220,7 +220,14 @@ body.theme-dark .zm-go { color: #F5B041; }
 .ks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .ks-grid img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 6px; cursor: zoom-in; background: var(--bg-3); }
 .ks-caption { margin: 12px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; font-size: 13px; }
-.ks-cap-k { font-size: 11px; color: var(--ink-3); margin-bottom: 4px; }
+.ks-cap-k { font-size: 11px; color: var(--ink-3); margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ks-cap-next { font-size: 12px; color: #D9790B; padding: 2px 6px; border-radius: 6px; }
+.ks-cap-next:hover { background: rgba(243,156,18,.12); }
+.ks-mode { display: flex; gap: 6px; margin-bottom: 10px; }
+.ks-mode-b { flex: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; color: var(--ink-2); }
+.ks-mode-b.active { border-color: #F39C12; color: #D9790B; font-weight: 700; background: rgba(243,156,18,.10); }
+.ks-one { text-align: center; }
+.ks-one img { width: 100%; max-width: 420px; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); -webkit-touch-callout: default; }
 .ks-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 #ksShareMoments { background: #07C160; border-color: #07C160; color: #fff; }
 .ks-how { padding: 10px 12px; border-radius: 8px; background: var(--good-soft); font-size: 13px; }
