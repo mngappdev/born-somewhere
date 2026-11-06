@@ -26,7 +26,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.25.0';
+const APP_VERSION = '6.26.0';
 const APP_BUILD = '2026-10-23';
 
 const STATE = {
@@ -2704,6 +2704,7 @@ function savePastLife(life) {
       name: life.name.full || life.name.full_en || '',
       age: life.deathAge || life.age,
       cause: life.cause,
+      sex: life.sex,               // v6.26：「大家分享的人生」等處讀頂層 sex；以前沒存，一律顯示成「女」
       full,                        // 完整人生；舊紀錄沒有這個欄位
     };
     arr.unshift(rec);
@@ -2720,7 +2721,10 @@ function savePastLife(life) {
 }
 function loadPastLives() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY + ':past') || '[]');
+    const arr = JSON.parse(localStorage.getItem(STORAGE_KEY + ':past') || '[]');
+    // v6.26：舊紀錄的頂層沒有 sex，從完整人生補回來（否則男性一律顯示成「女」）
+    for (const p of arr) if (p && !p.sex && p.full && p.full.sex) p.sex = p.full.sex;
+    return arr;
   } catch (e) { return []; }
 }
 
