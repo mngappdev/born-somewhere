@@ -1,9 +1,9 @@
-/* born-somewhere service worker v6.24
+/* born-somewhere service worker v6.25
  * Cache-first strategy for the static app shell + countries/i18n JSON.
  * Falls back to network when cache misses, then caches the response.
  */
-const CACHE_NAME = 'born-somewhere-v6.24';
-const APP_VERSION = '6.24.0';
+const CACHE_NAME = 'born-somewhere-v6.25';
+const APP_VERSION = '6.25.0';
 
 // Files we want in the offline shell. List both the entry HTML and the data
 // blob so the game can boot without network.
@@ -74,6 +74,8 @@ self.addEventListener('fetch', (event) => {
   // Only handle same-origin GETs (avoid messing with cross-origin beacons)
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // v6.25：公开追思馆 API 一律走网络（蜡烛数、删除都要即时）
+  if (url.pathname.startsWith('/api/')) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

@@ -605,9 +605,10 @@
         <button class="ks-tab" data-ks-tab="wish">🌙 ${tx('未竟的心愿', 'Unfinished wish')}</button>
         <button class="ks-tab" data-ks-tab="album">📖 ${tx('人生相簿 PDF', 'Album (PDF)')}</button>
         <button class="ks-tab" data-ks-tab="record">📒 ${tx('人生纪录册', 'Record book')}</button>
+        <button class="ks-tab" data-ks-tab="memorial">🕯️ ${tx('公开追思', 'Public memorial')}</button>
       </div>
       <div id="ksBody" class="ks-body"></div>
-      <p class="muted ks-foot">${tx('全部在你的装置上制作，不会上传。', 'Everything is made on your device. Nothing is uploaded.')}</p>
+      <p class="muted ks-foot">${tx('除了「公开追思」，全部在你的装置上制作，不会上传。', 'Except for public memorials, everything is made on your device and nothing is uploaded.')}</p>
     </div>`;
     m.hidden = false;
     $('#ksLife', m).addEventListener('change', (e) => openKeepsake(e.target.value));
@@ -722,6 +723,8 @@
         ${isWeChat() ? `<p class="ks-warn">${tx('微信内建浏览器不支援列印。请点右上角「⋯」→「在浏览器打开」，或先下载相簿网页档。', 'WeChat\'s browser cannot print. Open in your browser, or download the album HTML.')}</p>` : ''}`;
       $('#ksAlbum').addEventListener('click', async () => { await ensurePhotos(); await ensureWish(); printAlbum(current.life, current.photos); track('keepsake_album', { mode: 'print' }); });
       $('#ksAlbumHtml').addEventListener('click', async () => { await ensurePhotos(); await ensureWish(); downloadBlob(new Blob([albumHtml(current.life, current.photos, false)], { type: 'text/html;charset=utf-8' }), `${fileBase(current.life)}_album.html`); track('keepsake_album', { mode: 'html' }); });
+    } else if (tab === 'memorial') {
+      memorialTab(body);
     } else if (tab === 'wish') {
       wishTab(body);
     } else if (tab === 'video') {
@@ -1430,6 +1433,149 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
 </main></body></html>`;
   }
 
+  /* ---------------- v6.25：公开追思馆 ----------------
+     发布：只送出游戏生成的人生纪录（不含「我的照片」、不含玩家写下的反思）；
+     公开页 life.zenmatrix.org/?m=xxxx 在访客装置上用同一套程式重画九宫格与未竟的心愿。 */
+  const API = '/api/memorial';
+  const PUB_KEY = 'born-somewhere-v2:public-memorials';
+  const CANDLE_KEY = 'born-somewhere-v2:candles';
+  const BAD_TXT = /(https?:|www\.|\.(com|cn|net|org|io|me|top|xyz)\b|@[a-z0-9]|微信号|vx[:：]|qq[:：]|t\.me)/i;
+  const memUrl = (id) => SITE() + '?m=' + id;
+  const loadPub = () => { try { return JSON.parse(localStorage.getItem(PUB_KEY) || '{}') || {}; } catch (e) { return {}; } };
+  const savePub = (o) => { try { localStorage.setItem(PUB_KEY, JSON.stringify(o)); } catch (e) { /* ignore */ } };
+  async function withoutFace(fn) { const f = FACE; FACE = null; try { return await fn(); } finally { FACE = f; } }
+  function publicLife(life) {
+    const L = JSON.parse(JSON.stringify(Object.assign({}, life, { countryData: undefined, quotes: undefined, companions: undefined })));
+    delete L.quotes; delete L.countryData; delete L.companions;
+    L.log = (L.log || []).filter(e => e && e.text && !BAD_TXT.test(e.text)).map(e => ({ age: e.age, kind: e.kind, icon: e.icon, text: String(e.text).replace(AUTO_MARK, ' ').trim().slice(0, 260), starred: !!e.starred }));
+    L.decisions = (L.decisions || []).map(d => ({ age: d.age, id: d.id, key: d.key, label: d.label, icon: d.icon, note: BAD_TXT.test(d.note || '') ? '' : d.note }));
+    return L;
+  }
+  function memorialTab(body) {
+    const life = current.life, key = life.regNumber || fileBase(life);
+    const pub = loadPub()[key];
+    if (pub) return showPublished(body, key, pub);
+    body.innerHTML = `<p>${tx('把这一生做成一个公开的追思页面，任何人打开连结都能看到，并为 TA 点一根蜡烛。', 'Turn this life into a public memorial page anyone can visit and light a candle for.')}</p>
+      <div class="ks-pubbox">
+        <div><b>✅ ${tx('会公开', 'Public')}</b><ul><li>${tx('游戏生成的人生纪录：名字、出生地、年份、家人、事件、抉择、死因', 'The game-generated record: name, birthplace, years, family, events, choices, cause')}</li><li>${tx('照片组合（九宫格）与未竟的心愿（用插画）', 'The photo set and the unfinished wish (illustrations)')}</li></ul></div>
+        <div><b>🚫 ${tx('不会公开', 'Not public')}</b><ul><li>${tx('「我的照片」：即使你上传过，公开页也一律用插画', 'Your own photo: public pages always use illustrations')}</li><li>${tx('你在暂停时写下的想法', 'Anything you typed during the life')}</li><li>${tx('你的姓名、联络方式或任何个人资料', 'Your name, contact details or any personal data')}</li></ul></div>
+      </div>
+      <label class="ks-own"><input type="checkbox" id="ksPubOk"> ${tx('我了解这个页面任何拿到连结的人都能看到，之后可以随时删除。', 'I understand anyone with the link can see this page, and I can delete it anytime.')}</label>
+      <div class="ks-actions"><button class="primary" id="ksPub" type="button" disabled>🕯️ ${tx('发布到公开追思馆', 'Publish memorial')}</button></div>
+      <p class="muted" id="ksPubMsg"></p>`;
+    const ok = $('#ksPubOk'), btn = $('#ksPub'), msg = $('#ksPubMsg');
+    ok.addEventListener('change', () => { btn.disabled = !ok.checked; });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; msg.textContent = tx('发布中⋯', 'Publishing…');
+      try {
+        const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ life: publicLife(life) }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(r.status === 429 ? tx('今天发布太多次了，明天再试', 'Too many today, try tomorrow') : (j.error || r.status));
+        const all = loadPub(); all[key] = { id: j.id, token: j.token, name: summary(life).name, created: Date.now() }; savePub(all);
+        track('memorial_publish', { country: life.country });
+        showPublished(body, key, all[key]);
+      } catch (e) { msg.textContent = tx('发布失败：', 'Failed: ') + (e.message || e); btn.disabled = false; }
+    });
+  }
+  function showPublished(body, key, pub) {
+    const url = memUrl(pub.id);
+    body.innerHTML = `<p>🕯️ ${tx('这段人生已经在公开追思馆了：', 'This life is in the public memorial hall:')}</p>
+      <div class="ks-publink"><canvas id="ksPubQr" width="180" height="180"></canvas><div>
+        <a href="${url}" target="_blank" rel="noopener" class="ks-url">${esc(url.replace(/^https?:\/\//, ''))}</a>
+        <div class="ks-actions"><button class="primary" id="ksPubCopy" type="button">📋 ${tx('复制连结', 'Copy link')}</button>
+        ${navigator.share ? `<button class="ghost" id="ksPubShare" type="button">💚 ${tx('分享', 'Share')}</button>` : ''}
+        <button class="ghost" id="ksPubDel" type="button">🗑️ ${tx('删除公开页', 'Delete page')}</button></div>
+      </div></div>
+      <p class="muted">${tx('删除用的凭证只存在这个浏览器里；清除浏览资料后就无法自己删除，可来信 info@zenmatrix.org 处理。', 'The delete key lives only in this browser. If you clear it, email info@zenmatrix.org.')}</p>`;
+    const qc = $('#ksPubQr'); if (qc) qr(qc.getContext('2d'), url, 0, 0, 180);
+    const text = tx(`我在《模拟人生》里走完了一生，为 TA 留了一个追思页。来点一根蜡烛吧 🕯️ ${url}`, `I lived a whole life in Life Simulator. Light a candle for it 🕯️ ${url}`).replace(/TA/, current.life.sex === 'F' ? '她' : '他');
+    $('#ksPubCopy').addEventListener('click', async () => { const ok = await copyText(H(text)); toast(ok ? tx('连结已复制', 'Link copied') : tx('复制失败', 'Copy failed')); });
+    $('#ksPubShare')?.addEventListener('click', async () => { try { await navigator.share({ url, text: H(text), title: tx('追思', 'In memory') }); } catch (e) { /* cancelled */ } });
+    $('#ksPubDel').addEventListener('click', async () => {
+      if (!confirm(tx('确定删除这个公开追思页？删除后连结会失效。', 'Delete this public page? The link will stop working.'))) return;
+      try {
+        const r = await fetch(`${API}/${pub.id}`, { method: 'DELETE', headers: { 'x-owner-token': pub.token } });
+        if (!r.ok && r.status !== 404) throw new Error(r.status);
+        const all = loadPub(); delete all[key]; savePub(all);
+        track('memorial_delete', {});
+        toast(tx('已删除', 'Deleted')); memorialTab(body);
+      } catch (e) { toast(tx('删除失败，请稍后再试', 'Delete failed')); }
+    });
+  }
+
+  /* ---------- 公开页：?m=xxxx ---------- */
+  async function waitReady() { for (let i = 0; i < 100; i++) { if (typeof COUNTRIES !== 'undefined' && COUNTRIES.length && typeof I18N !== 'undefined' && I18N[LANG]) return true; await new Promise(r => setTimeout(r, 100)); } return false; }
+  async function openMemorialView(id) {
+    if (!(await waitReady())) return;
+    let v = $('#memView');
+    if (!v) { v = document.createElement('div'); v.id = 'memView'; v.className = 'mem-view'; document.body.appendChild(v); }
+    document.body.classList.add('mem-open');
+    v.innerHTML = `<div class="mem-wrap"><div class="ks-loading">🕯️ ${tx('正在打开追思页⋯', 'Opening…')}</div></div>`;
+    let data;
+    try { const r = await fetch(`${API}/${encodeURIComponent(id)}`); if (!r.ok) throw new Error(r.status); data = await r.json(); }
+    catch (e) {
+      v.innerHTML = `<div class="mem-wrap"><h2>🕯️ ${tx('这个追思页不存在或已删除', 'This memorial is not available')}</h2><div class="ks-actions"><button class="primary" data-mem-go type="button">▶ ${tx('我也来活一次', 'Live a life')}</button></div></div>`;
+      wireMemView(v); return;
+    }
+    const life = data.life; life.countryData = countryById(life.country); life.died = true;
+    if (!life.countryData) return;
+    const s = summary(life);
+    const lit = (() => { try { return (JSON.parse(localStorage.getItem(CANDLE_KEY) || '[]') || []).includes(id); } catch (e) { return false; } })();
+    const stages = STAGES.filter(st => st.min <= s.age).map(st => ({ st, evs: stageEvents(life, st, 3) })).filter(x => x.evs.length);
+    v.innerHTML = `<div class="mem-wrap">
+      <div class="mem-head">
+        <div class="mem-kicker">🕯️ ${tx('模拟人生 · 公开追思馆', 'Life Simulator · Memorial hall')}</div>
+        <h1>${esc(H(s.name))}</h1>
+        <p class="mem-meta">${s.c.flag} ${esc(H(s.loc.name))} · ${fmtBirth(life)} – ${s.dy} · ${tx('享年', 'Aged')} ${s.age}${s.cause ? ' · ' + esc(H(s.cause)) : ''}</p>
+        <button class="mem-candle ${lit ? 'lit' : ''}" id="memCandle" type="button"><span class="mem-flame">🕯️</span> <b id="memCount">${data.candles || 0}</b> <span>${lit ? tx('你已点过蜡烛', 'You lit a candle') : tx('点一根蜡烛', 'Light a candle')}</span></button>
+      </div>
+      <div class="ks-grid mem-grid" id="memGrid"><div class="ks-loading">${tx('正在画这一生⋯', 'Drawing this life…')}</div></div>
+      <div id="memWish"></div>
+      <div class="mem-tl">${stages.map(({ st, evs }) => `<section><h3>${st.icon} ${esc(tx(st.zh, st.en))} <small>${st.min}–${Math.min(st.max, s.age)}</small></h3><ul>${evs.map(e => `<li><b>${e.age}</b> ${esc(H(e.text))}</li>`).join('')}</ul></section>`).join('')}</div>
+      <div class="mem-cta"><p>${tx('这只是 80 亿种人生里的一种。你会出生在哪里？', 'One of 8 billion possible lives. Where would you be born?')}</p><button class="primary" data-mem-go type="button">▶ ${tx('我也来活一次', 'Live a life')}</button></div>
+      <div class="mem-recent" id="memRecent"></div>
+      <p class="muted mem-foot">${tx('人生为《模拟人生》依真实统计生成的虚构故事，由玩家发布。', 'A fictional life generated from real statistics, published by a player.')} <button class="lnk" id="memReport" type="button">${tx('举报', 'Report')}</button></p>
+    </div>`;
+    wireMemView(v);
+    track('memorial_view', { country: life.country });
+    $('#memCandle').addEventListener('click', async () => {
+      const b = $('#memCandle'); if (b.classList.contains('lit')) return;
+      b.classList.add('lit'); b.querySelector('span:last-child').textContent = tx('你已点过蜡烛', 'You lit a candle');
+      try { const r = await fetch(`${API}/${id}/candle`, { method: 'POST' }); const j = await r.json(); $('#memCount').textContent = j.candles; } catch (e) { /* ignore */ }
+      try { const a = JSON.parse(localStorage.getItem(CANDLE_KEY) || '[]') || []; a.push(id); localStorage.setItem(CANDLE_KEY, JSON.stringify(a.slice(-200))); } catch (e) { /* ignore */ }
+      track('memorial_candle', {});
+    });
+    $('#memReport').addEventListener('click', async () => {
+      if (!confirm(tx('这个页面有不当内容吗？举报后我们会检查。', 'Report this page for inappropriate content?'))) return;
+      try { await fetch(`${API}/${id}/report`, { method: 'POST' }); } catch (e) { /* ignore */ }
+      toast(tx('谢谢，已收到举报', 'Thanks, reported'));
+    });
+    // 图：在访客装置上重画（不含任何人的真实照片）
+    const photos = await withoutFace(() => makePhotos(life));
+    const grid = $('#memGrid'); if (grid) grid.innerHTML = photos.map((cv, i) => `<img src="${cv.toDataURL('image/jpeg', 0.82)}" alt="${i + 1}" data-mem-img>`).join('');
+    const wish = await makeWish(life);
+    const mw = $('#memWish'); if (mw) mw.innerHTML = `<div class="ks-one"><img src="${wish.toDataURL('image/jpeg', 0.85)}" alt=""></div>`;
+    v.querySelectorAll('[data-mem-img]').forEach(im => im.addEventListener('click', () => im.classList.toggle('zoom')));
+    try {
+      const r = await fetch(API); const j = await r.json();
+      const items = (j.items || []).filter(x => x.id !== id).slice(0, 8);
+      if (items.length) $('#memRecent').innerHTML = `<h3>🕯️ ${tx('最近的追思', 'Recent memorials')}</h3><div class="mem-list">${items.map(x => { const c = countryById(x.country); return `<a href="?m=${encodeURIComponent(x.id)}">${c ? c.flag : ''} ${esc(H(x.name || ''))} <small>${x.age} ${tx('岁', 'y')}</small></a>`; }).join('')}</div>`;
+    } catch (e) { /* ignore */ }
+  }
+  function wireMemView(v) {
+    v.querySelectorAll('[data-mem-go]').forEach(b => b.addEventListener('click', () => {
+      v.remove(); document.body.classList.remove('mem-open');
+      try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+      track('memorial_cta', {});
+      window.scrollTo(0, 0);
+    }));
+  }
+  (function bootMemorial() {
+    let id = null;
+    try { id = new URLSearchParams(location.search).get('m'); } catch (e) { id = null; }
+    if (id && /^[a-z0-9]{6,12}$/i.test(id)) openMemorialView(id.toLowerCase());
+  })();
+
   /* ---------------- 入口：讣闻页 + 书架 ---------------- */
   const _renderEnd = window.renderEnd;
   window.renderEnd = function () {
@@ -1446,6 +1592,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
           <button class="ghost" data-ks-open="wish" type="button">🌙 ${tx('未竟的心愿', 'Unfinished wish')}</button>
           <button class="ghost" data-ks-open="album" type="button">📖 ${tx('人生相簿 PDF', 'Album PDF')}</button>
           <button class="ghost" data-ks-open="record" type="button">📒 ${tx('人生纪录册', 'Record book')}</button>
+          <button class="ghost" data-ks-open="memorial" type="button">🕯️ ${tx('公开追思', 'Public memorial')}</button>
         </div></div>`);
     } catch (e) { /* ignore */ }
   };
@@ -1469,5 +1616,5 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
     };
   }
 
-  window.BornKeepsake = { makeWish, wishFor, openKeepsake, makePhotos, recordVideo, buildSegs, drawVideoFrame, pickMime, recordHtml, albumHtml, csv, caption };
+  window.BornKeepsake = { openMemorialView, publicLife, makeWish, wishFor, openKeepsake, makePhotos, recordVideo, buildSegs, drawVideoFrame, pickMime, recordHtml, albumHtml, csv, caption };
 })();
