@@ -247,3 +247,13 @@ body.theme-dark .zm-go { color: #F5B041; }
 .ks-crop-side input[type=range] { width: 100%; }
 .ks-crop-side input[type=number] { width: 90px; margin-left: 6px; }
 .ks-chk { display: flex; gap: 6px; align-items: flex-start; }
+/* v6.21：出生国家下拉 */
+.seg .fun-country-select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; font: inherit; border: 0;
+  max-width: 11em; padding-right: 22px; text-overflow: ellipsis;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 11px) 52%, calc(100% - 6px) 52%; background-size: 5px 5px; background-repeat: no-repeat;
+  background-color: transparent;
+}
+.seg .fun-country-select.active { background-color: var(--ink); color: var(--bg); }
+.seg .fun-country-select option, .seg .fun-country-select optgroup { color: var(--ink); background: var(--bg-2); }

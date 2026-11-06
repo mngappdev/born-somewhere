@@ -162,25 +162,49 @@
      ------------------------------------------------------------------ */
   function syncBirthPick() {
     try { syncSexEth(); } catch (e) { /* ignore */ }
-    document.querySelectorAll('[data-birth-pick]').forEach(b => b.classList.toggle('active', b.dataset.birthPick === (STATE.birthPick === 'random' ? 'random' : 'SGP')));
+    const isRandom = STATE.birthPick === 'random';
+    const chosen = countryById(isRandom ? lastCountry() : STATE.birthPick) || countryById('SGP');
+    document.querySelectorAll('[data-birth-pick]').forEach(b => b.classList.toggle('active', isRandom && b.dataset.birthPick === 'random'));
     const btn = $('#btnStart');
     if (btn) btn.dataset.funPick = STATE.birthPick;
     const lbl = $('#funPickLabel');
     if (lbl) lbl.textContent = tx('出生地', 'Birthplace');
-    const rb = $('[data-birth-pick="random"]'), sb = $('[data-birth-pick="SGP"]');
+    const rb = $('[data-birth-pick="random"]');
     if (rb) rb.textContent = tx('🎲 随机扭蛋', '🎲 Gacha');
-    if (sb) sb.textContent = `🇸🇬 ${countryById('SGP') ? localize(countryById('SGP')).name : 'Singapore'}`;
+    // v6.21：出生国家可选（常用国家置顶，其余依名称排序）
+    const cs = $('#birthCountrySelect');
+    if (cs && chosen) {
+      if (cs.dataset.lang !== LANG || cs.options.length < 10) {
+        const name = (c) => localize(c).name;
+        const top = TOP_COUNTRIES.map(countryById).filter(Boolean);
+        const rest = COUNTRIES.filter(c => !TOP_COUNTRIES.includes(c.id)).sort((a, b) => name(a).localeCompare(name(b), isZh() ? 'zh-Hans-CN' : undefined));
+        const opt = (c) => `<option value="${c.id}">${c.flag} ${esc(name(c))}</option>`;
+        cs.innerHTML = `<optgroup label="${tx('常用', 'Popular')}">${top.map(opt).join('')}</optgroup><optgroup label="${tx('全部国家和地区', 'All countries')}">${rest.map(opt).join('')}</optgroup>`;
+        cs.dataset.lang = LANG;
+      }
+      cs.value = chosen.id;
+      cs.classList.toggle('active', !isRandom);
+      cs.setAttribute('aria-label', tx('出生国家', 'Birth country'));
+    }
+    const lower = $('#countrySelect');
+    if (lower && !isRandom && lower.value !== chosen.id && [...lower.options].some(o => o.value === chosen.id)) { lower.value = chosen.id; STATE.selectedCountry = chosen.id; }
     const hint = $('#funPickHint');
-    if (hint) {
-      const sg = countryById('SGP');
-      hint.textContent = STATE.birthPick === 'random'
+    if (hint && chosen) {
+      const nm = localize(chosen).name;
+      hint.textContent = isRandom
         ? tx('🎲 扭蛋模式：依真实出生人数比例随机抽出生地（新加坡出生的机率只有约 0.03%）', '🎲 Gacha mode: birthplace drawn by real birth counts')
-        : tx(`🇸🇬 默认出生在新加坡 · 预期寿命 ${sg ? sg.le : 83} 岁。想试试运气？切到「随机扭蛋」`, '🇸🇬 Born in Singapore by default. Switch to gacha to try your luck.');
+        : tx(`${chosen.flag} 将出生在${nm} · 预期寿命 ${chosen.le} 岁。可以从下拉选单换成任何国家，或切到「随机扭蛋」碰运气`, `${chosen.flag} You'll be born in ${nm}. Pick any country from the list, or switch to gacha.`);
     }
   }
+  const TOP_COUNTRIES = ['SGP', 'CHN', 'MYS', 'TWN', 'HKG', 'MAC', 'JPN', 'KOR', 'THA', 'VNM', 'IDN', 'PHL', 'IND', 'USA', 'CAN', 'GBR', 'AUS', 'NZL', 'DEU', 'FRA'];
+  const lastCountry = () => { try { return localStorage.getItem('born-somewhere-v2:birthCountry') || 'SGP'; } catch (e) { return 'SGP'; } };
   function setBirthPick(v) {
-    STATE.birthPick = v === 'random' ? 'random' : 'SGP';
-    try { localStorage.setItem('born-somewhere-v2:birthPick', STATE.birthPick); } catch (e) { /* ignore */ }
+    const c = v !== 'random' ? countryById(v) : null;
+    STATE.birthPick = c ? c.id : 'random';
+    try {
+      localStorage.setItem('born-somewhere-v2:birthPick', STATE.birthPick);
+      if (c) localStorage.setItem('born-somewhere-v2:birthCountry', c.id);
+    } catch (e) { /* ignore */ }
     syncBirthPick();
   }
   function weightedRandomCountry() { return chooseCountry(STATE.birthMode); }
@@ -502,6 +526,15 @@
   window.wire = function () {
     _wire.apply(this, arguments);
     document.querySelectorAll('[data-birth-pick]').forEach(b => b.addEventListener('click', () => setBirthPick(b.dataset.birthPick)));
+    const cs = $('#birthCountrySelect');
+    if (cs) {
+      cs.addEventListener('change', () => setBirthPick(cs.value));
+      // 扭蛋模式下点一下下拉选单，就回到「指定国家」
+      cs.addEventListener('pointerdown', () => { if (STATE.birthPick === 'random') setBirthPick(cs.value); });
+      cs.addEventListener('focus', () => { if (STATE.birthPick === 'random') setBirthPick(cs.value); });
+    }
+    // 页面下方原有的「或者选一个国家」也同步成出生地
+    $('#countrySelect')?.addEventListener('change', (e) => setBirthPick(e.target.value));
     document.querySelectorAll('[data-birth-sex]').forEach(b => b.addEventListener('click', () => { STATE.birthSex = b.dataset.birthSex; store.set('sex', STATE.birthSex); syncSexEth(); }));
     $('#birthEthSelect')?.addEventListener('change', (e) => { STATE.birthEth = e.target.value; store.set('eth', STATE.birthEth); });
     const hint = document.createElement('p');
