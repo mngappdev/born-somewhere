@@ -762,7 +762,11 @@
     "soft.on": "已略過可怕的情節 — 點一下恢復",
     "soft.off": "讓自殺、性暴力、藥物、暴力這類情節不會發生",
     "shelf.noFamilyData": "舊的人生紀錄沒有家族資料，全景圖需要重新玩一段人生才能產生。",
-    "hero.brand": "模擬人生"
+    "hero.brand": "模擬人生",
+    "cause.中風": "中風",
+    "cause.營養不良": "營養不良",
+    "cause.自行結束": "提前結束",
+    "cause.壽終正寢": "壽終正寢"
   },
   "zh-Hans": {
     "title": "模拟人生 · 选一个出生地",
@@ -1527,7 +1531,11 @@
     "soft.on": "已跳过可怕的情节 — 点一下恢复",
     "soft.off": "让自杀、性暴力、药物、暴力这类情节不会发生",
     "shelf.noFamilyData": "旧的人生记录没有家族资料，全景图需要重新玩一段人生才能产生。",
-    "hero.brand": "模拟人生"
+    "hero.brand": "模拟人生",
+    "cause.中風": "中风",
+    "cause.營養不良": "营养不良",
+    "cause.自行結束": "提前结束",
+    "cause.壽終正寢": "寿终正寝"
   },
   "en": {
     "title": "Born Somewhere · Life Simulator",
@@ -2292,7 +2300,11 @@
     "soft.on": "Heavy events are hidden — click to show them",
     "soft.off": "Hide suicide, violence, drugs and abuse events",
     "shelf.noFamilyData": "These older lives have no family data. Play a new life to build a panorama.",
-    "hero.brand": "Life Simulator"
+    "hero.brand": "Life Simulator",
+    "cause.中風": "Stroke",
+    "cause.營養不良": "Malnutrition",
+    "cause.自行結束": "Ended early",
+    "cause.壽終正寢": "Died peacefully of old age"
   },
   "ko": {
     "title": "태어난 곳 · 인생 시뮬레이션",
@@ -3057,7 +3069,11 @@
     "soft.on": "무거운 장면이 숨겨져 있습니다 — 클릭하면 다시 표시",
     "soft.off": "자살·폭력·마약·학대의 장면을 숨깁니다",
     "shelf.noFamilyData": "이전 삶의 기록에는 가족 정보가 없습니다. 새 삶을 플레이하면 만들어집니다.",
-    "hero.brand": "인생 시뮬레이터"
+    "hero.brand": "인생 시뮬레이터",
+    "cause.中風": "뇌졸중",
+    "cause.營養不良": "영양실조",
+    "cause.自行結束": "일찍 끝냄",
+    "cause.壽終正寢": "천수를 누림"
   },
   "ja": {
     "title": "出生地 · 人生シミュレーション",
@@ -3822,7 +3838,11 @@
     "soft.on": "重い場面は非表示です — クリックで再表示",
     "soft.off": "自殺・暴力・薬物・虐待の場面を隠します",
     "shelf.noFamilyData": "以前の生活記録には家族情報がありません。新しい人生をプレイすると作成されます。",
-    "hero.brand": "人生シミュレーター"
+    "hero.brand": "人生シミュレーター",
+    "cause.中風": "脳卒中",
+    "cause.營養不良": "栄養失調",
+    "cause.自行結束": "途中で終了",
+    "cause.壽終正寢": "天寿を全う"
   },
   "vi": {
     "title": "Nơi sinh · Mô phỏng cuộc đời",
@@ -4587,7 +4607,11 @@
     "soft.on": "Cảnh nặng đang ẩn — bấm để hiện lại",
     "soft.off": "Ẩn các cảnh tự sát, bạo lực, ma túy, lạm dụng",
     "shelf.noFamilyData": "Các kiếp sống cũ không có dữ liệu gia đình. Hãy chơi một kiếp sống mới để tạo.",
-    "hero.brand": "Mô phỏng cuộc đời"
+    "hero.brand": "Mô phỏng cuộc đời",
+    "cause.中風": "Đột quỵ",
+    "cause.營養不良": "Suy dinh dưỡng",
+    "cause.自行結束": "Kết thúc sớm",
+    "cause.壽終正寢": "Ra đi thanh thản khi tuổi già"
   },
   "fr": {
     "title": "Né quelque part · Simulateur de vie",
@@ -5352,7 +5376,11 @@
     "soft.on": "Les scènes lourdes sont masquées — cliquez pour les afficher",
     "soft.off": "Masquer les scènes de suicide, violence, drogue et abus",
     "shelf.noFamilyData": "Ces vies passées n'ont pas de données familiales. Jouez une nouvelle vie pour créer le panorama.",
-    "hero.brand": "Simulateur de vie"
+    "hero.brand": "Simulateur de vie",
+    "cause.中風": "AVC",
+    "cause.營養不良": "Malnutrition",
+    "cause.自行結束": "Terminée plus tôt",
+    "cause.壽終正寢": "Mort paisible de vieillesse"
   },
   "th": {
     "title": "เกิดที่ไหน · จำลองชีวิต",
@@ -6117,7 +6145,11 @@
     "soft.on": "ซ่อนฉากหนักอยู่ — คลิกเพื่อแสดง",
     "soft.off": "ซ่อนฉากการฆ่าตัวตาย ความรุนแรง ยาเสพติด และการทำร้าย",
     "shelf.noFamilyData": "ชีวิตเก่าไม่มีข้อมูลครอบครัว เล่นชีวิตใหม่เพื่อสร้างแผนผัง",
-    "hero.brand": "จำลองชีวิต"
+    "hero.brand": "จำลองชีวิต",
+    "cause.中風": "โรคหลอดเลือดสมอง",
+    "cause.營養不良": "ภาวะทุพโภชนาการ",
+    "cause.自行結束": "จบก่อนกำหนด",
+    "cause.壽終正寢": "จากไปอย่างสงบตามวัย"
   },
   "es": {
     "title": "Nacido en algún lugar · Simulador de vida",
@@ -6882,6 +6914,10 @@
     "soft.on": "Las escenas pesadas están ocultas — haz clic para mostrarlas",
     "soft.off": "Ocultar escenas de suicidio, violencia, drogas y abuso",
     "shelf.noFamilyData": "Estas vidas antiguas no tienen datos familiares. Juega una vida nueva para crear el panorama.",
-    "hero.brand": "Simulador de vida"
+    "hero.brand": "Simulador de vida",
+    "cause.中風": "Ictus",
+    "cause.營養不良": "Desnutrición",
+    "cause.自行結束": "Terminada antes",
+    "cause.壽終正寢": "Murió en paz de vejez"
   }
 }

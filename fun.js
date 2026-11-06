@@ -193,7 +193,7 @@
       const nm = localize(chosen).name;
       hint.textContent = isRandom
         ? tx('🎲 扭蛋模式：依真实出生人数比例随机抽出生地（新加坡出生的机率只有约 0.03%）', '🎲 Gacha mode: birthplace drawn by real birth counts')
-        : tx(`${chosen.flag} 将出生在${nm} · 预期寿命 ${chosen.le} 岁。可以从下拉选单换成任何国家，或切到「随机扭蛋」碰运气`, `${chosen.flag} You'll be born in ${nm}. Pick any country from the list, or switch to gacha.`);
+        : tx(`${chosen.flag} 将出生在${nm} · 预期寿命约 ${Math.round(effectiveLe(chosen, { countryData: chosen, ethnicity: STATE.birthEth && STATE.birthEth !== 'auto' ? STATE.birthEth : null }))} 岁。可以从下拉选单换成任何国家，或切到「随机扭蛋」碰运气`, `${chosen.flag} You'll be born in ${nm}. Pick any country from the list, or switch to gacha.`);
     }
   }
   const TOP_COUNTRIES = ['SGP', 'CHN', 'MYS', 'TWN', 'HKG', 'MAC', 'JPN', 'KOR', 'THA', 'VNM', 'IDN', 'PHL', 'IND', 'USA', 'CAN', 'GBR', 'AUS', 'NZL', 'DEU', 'FRA'];
@@ -1351,5 +1351,87 @@
   else startHans();
 
   // 给测试 / 除错用
-  window.BornFun = { rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
+  /* ------------------------------------------------------------------
+     v6.22：死因说明 —— 为什么会这样？怎么预防？
+     结束页在「死亡原因分析」上方加一张卡：这个死因是什么、这一生里有哪些因素推高了它、
+     现实中可以怎么预防。80 岁以上的「其他／自然衰老」改称「寿终正寝」。
+     ------------------------------------------------------------------ */
+  const _pickCause = window.pickCause;
+  window.pickCause = function (c, age) {
+    const k = _pickCause.apply(this, arguments);
+    return (age >= 80 && k === '其他') ? '壽終正寢' : k;
+  };
+  const _die5 = window.dieNow;
+  window.dieNow = function (forced) {
+    const L = STATE.life;
+    if (forced === '自然衰老' && L && L.age >= 80) return _die5.call(this, '壽終正寢');
+    return _die5.apply(this, arguments);
+  };
+  const CAUSE_INFO = {
+    '壽終正寢': { i: '🕊️', zh: ['走完了完整的一生，身体自然老去，安详地离开。这是大多数人心中最好的结局。', ['保持规律作息、适量运动和社交，让晚年过得有质量', '定期体检，慢性病早发现早控制', '想说的话、想做的事趁早完成，不留遗憾']], en: ['A full life, ending peacefully as the body aged. For most people this is the best ending there is.', ['Keep active, sleep well and stay social', 'Regular check-ups to catch chronic disease early', 'Say and do the things that matter while you can']] },
+    '自然衰老': { i: '🕊️', zh: ['身体机能随年龄自然衰退。', ['规律运动、均衡饮食', '定期体检', '保持社交与兴趣']], en: ['The body wore out with age.', ['Exercise and eat well', 'Regular check-ups', 'Stay social and curious']] },
+    '其他': { i: '🩺', zh: ['包括肾病、肝病、消化系统疾病、并发症等较少见的原因，合起来也占不小的比例。', ['每年体检，留意血压、血糖、肝肾功能', '身体持续异常（疼痛、消瘦、出血）尽早就医', '不滥用药物和酒精']], en: ['A mix of less common causes: kidney, liver and digestive disease, complications and more.', ['Yearly check-ups (blood pressure, sugar, liver and kidney)', 'See a doctor early for persistent symptoms', 'Avoid misuse of alcohol and medicines']] },
+    '心血管': { i: '❤️', zh: ['心脏病与血管疾病，是全世界第一大死因。高血压、高胆固醇、吸烟、肥胖、缺乏运动、长期压力都会让风险一点点累积。', ['定期量血压、验血脂和血糖，有问题按医嘱服药', '戒烟、少盐少油、多蔬果，保持健康体重', '每周至少 150 分钟中等强度运动', '认得胸痛、呼吸困难等心梗征兆，立刻求医']], en: ['Heart and blood-vessel disease is the world\'s leading cause of death. Blood pressure, cholesterol, smoking, weight, inactivity and stress all add up.', ['Check blood pressure, lipids and sugar; take prescribed meds', 'Quit smoking, eat less salt and fat, more vegetables', '150 minutes of moderate exercise a week', 'Know the warning signs of a heart attack and act fast']] },
+    '中風': { i: '🧠', zh: ['脑部血管阻塞或破裂。最大的危险因素是高血压，其次是吸烟、糖尿病、心房颤动。', ['控制血压是最有效的预防', '戒烟限酒、控制血糖', '记住「中风 120」：脸歪、手臂无力、说话不清，立刻打急救电话']], en: ['A blocked or burst blood vessel in the brain. High blood pressure is the biggest risk, then smoking, diabetes and atrial fibrillation.', ['Control blood pressure: the single best prevention', 'Quit smoking, limit alcohol, manage blood sugar', 'FAST: face, arm, speech, time to call emergency services']] },
+    '癌症': { i: '🎗️', zh: ['细胞失控增生。年龄越大风险越高；吸烟、饮酒、肥胖、某些感染（乙肝、HPV）与环境致癌物都会增加风险。', ['不吸烟是最重要的一步，也避开二手烟', '接种乙肝与 HPV 疫苗', '按年龄做筛查：大肠镜、乳房摄影、子宫颈抹片、低剂量肺 CT 等', '少吃加工肉、控制体重、做好防晒']], en: ['Cells growing out of control. Risk rises with age; smoking, alcohol, obesity, some infections (hepatitis B, HPV) and carcinogens add to it.', ['Don\'t smoke, and avoid second-hand smoke', 'Get hepatitis B and HPV vaccines', 'Age-based screening: colonoscopy, mammogram, Pap test, lung CT', 'Less processed meat, healthy weight, sun protection']] },
+    '呼吸系統': { i: '🫁', zh: ['慢性阻塞性肺病（COPD）、肺炎等。吸烟、空气污染、烧柴煮饭的室内烟雾是主要原因。', ['戒烟，远离二手烟', '空气差时戴口罩、减少户外活动', '老人每年打流感疫苗，65 岁以上接种肺炎球菌疫苗']], en: ['COPD, pneumonia and similar. Smoking, air pollution and indoor smoke from cooking fires are the main drivers.', ['Quit smoking and avoid second-hand smoke', 'Mask up and stay in on bad-air days', 'Yearly flu shots; pneumococcal vaccine after 65']] },
+    '糖尿病': { i: '🩸', zh: ['血糖长期过高，会伤害心、肾、眼睛和神经。肥胖、久坐、高糖饮食与家族史是主要风险。', ['少喝含糖饮料，多吃全谷物与蔬菜', '规律运动、控制腰围', '40 岁后每年验血糖；确诊后按时服药、定期复诊']], en: ['Long-term high blood sugar damages the heart, kidneys, eyes and nerves. Weight, inactivity, sugary diets and family history raise the risk.', ['Cut sugary drinks; eat whole grains and vegetables', 'Exercise regularly and watch your waistline', 'Yearly glucose test after 40; follow treatment if diagnosed']] },
+    '感染性疾病': { i: '🦠', zh: ['肺炎、腹泻、结核、艾滋病等。在医疗资源不足、饮水卫生差的地方尤其致命。', ['按时接种疫苗', '勤洗手、喝干净的水', '发烧不退、腹泻脱水要及早就医', '安全性行为，必要时做 HIV 检测']], en: ['Pneumonia, diarrhoea, TB, HIV and more. Deadliest where clean water and healthcare are scarce.', ['Stay up to date on vaccines', 'Wash hands; drink safe water', 'Seek care early for persistent fever or dehydration', 'Safer sex and HIV testing']] },
+    '瘧疾': { i: '🦟', zh: ['由蚊子传播的寄生虫病，在热带非洲最常见，5 岁以下儿童最危险。', ['睡觉挂药浸蚊帐', '住所喷防蚊药、清除积水', '发烧尽快验疟疾并治疗；高风险地区可预防性服药']], en: ['A mosquito-borne parasite, most common in tropical Africa and deadliest for children under 5.', ['Sleep under insecticide-treated nets', 'Indoor spraying; remove standing water', 'Test and treat fever quickly; preventive drugs in high-risk areas']] },
+    '事故': { i: '🚗', zh: ['交通事故、跌倒、烧烫伤、中毒等，是年轻人最常见的死因之一；道路越危险的国家越多。', ['系安全带、骑车戴头盔、不酒驾、开车不看手机', '家里装扶手和防滑垫，预防老人跌倒', '危险物品放在孩子拿不到的地方']], en: ['Road crashes, falls, burns, poisoning. A top killer of young people, especially where roads are dangerous.', ['Seatbelts, helmets, no drink-driving, no phone at the wheel', 'Grab bars and non-slip mats to prevent falls', 'Keep hazards out of children\'s reach']] },
+    '溺水': { i: '🌊', zh: ['儿童最常见的意外死因之一，往往安静而迅速地发生。', ['孩子在水边一定要有大人「盯着」，而不只是「在附近」', '学游泳，水池加围栏', '不在没有救生员的野外水域游泳']], en: ['One of the most common accidental deaths for children, and it happens quickly and quietly.', ['Active adult supervision near water', 'Learn to swim; fence pools', 'Avoid unguarded open water']] },
+    '周產期問題': { i: '👶', zh: ['早产、出生时缺氧、新生儿感染等，和产检、接生条件高度相关。', ['怀孕期间定期产检', '在有专业人员的医院分娩', '新生儿保暖、母乳喂养、按时接种疫苗']], en: ['Prematurity, birth asphyxia, newborn infections. Strongly tied to prenatal care and delivery conditions.', ['Regular prenatal check-ups', 'Give birth with skilled attendants', 'Keep newborns warm, breastfeed, vaccinate']] },
+    '先天異常': { i: '🧬', zh: ['出生时就有的结构或功能异常，例如先天性心脏病。部分可以预防或治疗。', ['孕前与孕早期补充叶酸', '孕期避免烟酒与不明药物', '做产前筛检；很多先天性心脏病可以手术矫正']], en: ['Conditions present from birth, such as congenital heart defects. Some can be prevented or treated.', ['Folic acid before and in early pregnancy', 'No smoking, alcohol or unprescribed drugs in pregnancy', 'Prenatal screening; many heart defects can be repaired']] },
+    '嬰兒猝死': { i: '🍼', zh: ['一岁以下婴儿在睡眠中突然离世，原因仍不完全清楚。', ['让婴儿仰睡，睡在自己的婴儿床', '床上不放枕头、厚被、玩偶', '室内不吸烟，避免过热']], en: ['Sudden unexplained death of an infant during sleep.', ['Back to sleep, in their own cot', 'No pillows, duvets or toys in the cot', 'Smoke-free home; avoid overheating']] },
+    '營養不良': { i: '🍚', zh: ['长期吃不饱或营养不均衡，使身体抵抗力下降，多发生在贫困与粮食不足的地区。', ['孩子出生头六个月纯母乳喂养', '补充维生素 A、铁、锌等微量营养素', '定期测量孩子身高体重']], en: ['Not enough food or the wrong balance, weakening the body. Concentrated where poverty and food shortages are.', ['Exclusive breastfeeding for six months', 'Micronutrients: vitamin A, iron, zinc', 'Regular growth checks for children']] },
+    '自殺': { i: '💛', zh: ['许多人在最痛苦的时候，看不到其他出路。但这种状态是可以被陪伴、被治疗的。', ['留意身边人的变化：退缩、说绝望的话、交代后事', '主动问一句「你还好吗？」，认真倾听', '心理困扰可以就医，就像身体生病一样', '新加坡 SOS 热线 1767；中国大陆心理援助热线 12356']], en: ['In their darkest moments many people can\'t see another way out. That state can be supported and treated.', ['Notice changes: withdrawal, hopeless talk, giving things away', 'Ask "are you okay?" and really listen', 'Mental health care is real health care', 'Reach a local crisis line (e.g. 988 in the US, 1767 in Singapore)']] },
+    '他殺': { i: '🕯️', zh: ['人际暴力，和所在地的治安、贫富差距、枪支与帮派有关。', ['远离暴力冲突与危险场所', '家暴不是家务事，可以求助与报警', '社区与教育投入能长期降低暴力']], en: ['Interpersonal violence, tied to local safety, inequality, guns and gangs.', ['Avoid violent situations and places', 'Domestic violence is not private; seek help', 'Community and education reduce violence over time']] },
+    '戰爭/衝突': { i: '🕊️', zh: ['出生在战乱或冲突地区，个人很难选择。', ['尽量远离冲突区域，寻求人道援助', '关注与支持和平与难民援助', '这一生让我们看到：和平本身就是一种幸运']], en: ['Born where war or conflict is happening, which no one chooses.', ['Move away from conflict zones; seek humanitarian aid', 'Support peace and refugee relief', 'Peace itself is a kind of luck']] },
+    '自行結束': { i: '⏹️', zh: ['你在中途按下了结束。随时可以再来一次，看看另一种人生。', ['再出生一次，试试不同的国家', '或者让这一生自然走完']], en: ['You ended this life early. You can always start another.', ['Be born again somewhere else', 'Or let a life run its full course']] },
+  };
+  function causeFactors(life) {
+    const c = life.countryData || {}, k = life.cause, age = life.deathAge ?? life.age, out = [];
+    const nm = (typeof localize === 'function' && c.id) ? localize(c).name : '';
+    const add = (zh, en) => out.push(tx(zh, en));
+    if (life.smoker && ['癌症', '心血管', '呼吸系統', '中風'].includes(k)) add('这一生有吸烟习惯，风险约高出 30–50%', 'This person smoked, raising the risk by roughly 30–50%');
+    if (life.conditions?.diabetes && ['糖尿病', '心血管', '中風'].includes(k)) add('本身有糖尿病', 'Had diabetes');
+    if (life.conditions?.heart && ['心血管', '中風'].includes(k)) add('本身有心脏病史', 'Had a history of heart disease');
+    if ((c.sm || 0) > 30 && ['癌症', '心血管', '呼吸系統'].includes(k)) add(`${nm}的吸烟率高（${c.sm}%），二手烟也多`, `High smoking rate in ${nm} (${c.sm}%)`);
+    if ((c.road || 0) > 15 && k === '事故') add(`${nm}的道路交通死亡率偏高（每 10 万人 ${c.road}）`, `Dangerous roads in ${nm} (${c.road} per 100k)`);
+    if ((c.hom || 0) > 5 && k === '他殺') add(`${nm}的凶杀率偏高（每 10 万人 ${c.hom}）`, `High homicide rate in ${nm} (${c.hom} per 100k)`);
+    if ((c.hiv || 0) > 1 && k === '感染性疾病') add(`${nm}的 HIV 感染率较高（${c.hiv}%）`, `High HIV prevalence in ${nm} (${c.hiv}%)`);
+    if ((c.mal || 0) > 0.5 && k === '瘧疾') add(`${nm}是疟疾流行区`, `${nm} is a malaria-endemic area`);
+    if ((c.u5 || 0) > 30 && age < 5) add(`${nm}的 5 岁以下儿童死亡率是每千人 ${c.u5}，医疗与卫生条件有限`, `Under-5 mortality in ${nm} is ${c.u5} per 1,000`);
+    if (life.stats?.birthPlaceType === 'rural' && age < 15 && ['感染性疾病', '周產期問題', '營養不良', '瘧疾'].includes(k)) add('出生在乡村，离医院比较远', 'Born rural, far from hospitals');
+    if ((life.stats?.incomeQuartile || 4) <= 1 && age < 50 && k !== '自行結束') add('家境较困难，看病与营养都受限', 'A poorer household, with less access to care and nutrition');
+    if (typeof life.stats?.health === 'number' && life.stats.health < 35 && age >= 30 && k !== '自行結束') add(`去世前健康值只剩 ${Math.round(life.stats.health)}`, `Health had dropped to ${Math.round(life.stats.health)}`);
+    if (age >= 70 && k !== '自行結束') add(`活到 ${age} 岁，年龄本身就是最大的风险因素`, `At ${age}, age itself is the biggest risk factor`);
+    return out;
+  }
+  function causeCard(life) {
+    const k = life.cause; const info = CAUSE_INFO[k] || CAUSE_INFO['其他'];
+    const [what, tips] = isZh() ? info.zh : info.en;
+    const f = causeFactors(life);
+    const label = typeof causeLabel === 'function' ? causeLabel(k) : k;
+    return `<div class="fun-cause" id="funCause">
+      <h3>${info.i} ${tx('为什么会这样？', 'Why did this happen?')} <span class="fun-cause-k">${esc(label)}</span></h3>
+      <p>${esc(what)}</p>
+      ${f.length ? `<h4>${tx('这一生里的影响因素', 'What played a part in this life')}</h4><ul>${f.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      <h4>${tx('现实中可以怎么预防', 'How to lower the risk in real life')}</h4>
+      <ul class="fun-cause-tips">${tips.map(x => `<li>✅ ${esc(x)}</li>`).join('')}</ul>
+      <p class="muted fun-cause-note">${tx('依世界卫生组织等公开资料整理，仅供参考，不能替代医生的建议。', 'Based on WHO and other public sources. General information, not medical advice.')}</p>
+    </div>`;
+  }
+  const _re5 = window.renderEnd;
+  window.renderEnd = function () {
+    _re5.apply(this, arguments);
+    try {
+      const life = STATE.life; if (!life || !life.died) return;
+      $('#funCause')?.remove();
+      const anchor = $('#endCauseAnalysis');
+      if (anchor) anchor.insertAdjacentHTML('beforebegin', causeCard(life));
+    } catch (e) { /* ignore */ }
+  };
+
+  window.BornFun = { causeCard, CAUSE_INFO, rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
 })();

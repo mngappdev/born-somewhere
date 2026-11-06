@@ -421,7 +421,7 @@
           [tx('家境', 'Household'), `Q${life.stats?.incomeQuartile || 2} / 4`],
           [tx('父亲', 'Father'), father ? (typeof father.name === 'string' ? father.name : father.name?.full || '—') : '—'],
           [tx('母亲', 'Mother'), mother ? (typeof mother.name === 'string' ? mother.name : mother.name?.full || '—') : '—'],
-          [tx('预期寿命', 'Life expectancy'), `${s.c.le} ${tx('岁', 'years')}`],
+          [tx('预期寿命', 'Life expectancy'), `${effectiveLe(s.c, life)} ${tx('岁', 'years')}`],
         ];
         let y = 840;
         for (const [k, v] of rows) {
@@ -848,7 +848,7 @@ a { color: var(--accent); }
 <div class="cards">
  <div class="card">${tx('稀有度', 'Rarity')}<b>${s.r ? s.r.tier.id : '—'}</b></div>
  <div class="card">${tx('出生运气', 'Birth luck')}<b>${window.BornFun ? BornFun.luck(s.c).score : '—'}</b></div>
- <div class="card">${tx('当地预期寿命', 'Life expectancy')}<b>${s.c.le}</b></div>
+ <div class="card">${tx('当地预期寿命', 'Life expectancy')}<b>${effectiveLe(s.c, life)}</b></div>
  <div class="card">${tx('实际寿命', 'Lived')}<b>${s.age}</b></div>
  <div class="card">${tx('净资产 US$', 'Net worth US$')}<b>${Math.round(life.stats?.netAssets || 0).toLocaleString()}</b></div>
  <div class="card">${tx('抉择', 'Choices')}<b>${choices.length}</b></div>

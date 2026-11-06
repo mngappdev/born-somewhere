@@ -26,7 +26,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.21.0';
+const APP_VERSION = '6.22.0';
 const APP_BUILD = '2026-10-23';
 
 const STATE = {
@@ -1137,11 +1137,29 @@ function updateRealtimeCounters() {
 }
 
 // ==== 生命表 (Gompertz) ====
+// v6.22：世代壽命加成。
+// c.le 是「時期」預期壽命：假設嬰兒一輩子都活在今天的死亡率之下。
+// 但今天出生的人會一路受惠於醫療與生活條件的進步，實際活得更久
+// （英國 ONS：2021 年出生世代的預期壽命比時期值高約 7–8 歲）。
+// 所以依出生年代加上世代加成；華人（含中國、台灣、香港、澳門出生者）再多 2 歲，
+// 這一項是遊戲性調整（華人對「早逝」比較忌諱），不是統計數字。上限 95 歲。
+const CHINESE_REGIONS = ['CHN', 'TWN', 'HKG', 'MAC'];
+function longevityBonus(c, life) {
+  const L = life || STATE.life;
+  const year = (L && L.countryData && L.countryData.id === c.id && L.year) ? L.year
+    : (STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : NOW_YEAR);
+  let b = year >= 2060 ? 8 : year >= 2000 ? 6 : year >= 1980 ? 4 : 2;
+  const eth = L && L.countryData && L.countryData.id === c.id ? L.ethnicity : null;
+  if (eth === 'chinese' || (!eth && CHINESE_REGIONS.includes(c.id))) b += 2;
+  return Math.max(0, Math.min(b, 95 - (c.le || 70)));
+}
+function effectiveLe(c, life) { return Math.round(((c.le || 70) + longevityBonus(c, life)) * 10) / 10; }
 const LT_CACHE = {};
-function lifeTable(c, sex) {
-  const key = c.id + sex + (c.yr || '');
+function lifeTable(c, sex, life) {
+  const le = effectiveLe(c, life);
+  const key = c.id + sex + (c.yr || '') + '|' + le;
   if (LT_CACHE[key]) return LT_CACHE[key];
-  const e0 = sex === 'F' ? c.le + (c.gap || 4) * 0.49 : c.le - (c.gap || 4) * 0.51;
+  const e0 = sex === 'F' ? le + (c.gap || 4) * 0.49 : le - (c.gap || 4) * 0.51;
   const k = sex === 'F' ? 0.92 : 1.08;
   const q0 = Math.min(0.25, (c.im || 15) / 1000 * k);
   const u5 = Math.min(0.35, Math.max(q0 + 0.0005, (c.u5 || 10) / 1000 * k));
@@ -1189,9 +1207,9 @@ function lifeTable(c, sex) {
   return LT_CACHE[key];
 }
 
-function pDie(age, c, sex) {
+function pDie(age, c, sex, life) {
   if (age < 0) return 0;
-  const lt = lifeTable(c, sex);
+  const lt = lifeTable(c, sex, life);
   if (age >= 110) return 1;
   if (age === 0) return lt.q[0];
   if (lt.l[age] === 0) return 1;
@@ -2026,7 +2044,7 @@ function tick() {
   // v5.13：年度焦點選擇（每年 6+ 歲自動彈出，除非autoDecide）→ 已改為手動
   // 達到當地平均壽命 1.3x 自動死亡
   // v5.33：壽命上限放寬（從 1.35x 改為 1.8x，1in8b.life 實測 98-101 歲）
-  const maxAge = c.le * 1.8;
+  const maxAge = effectiveLe(c) * 1.8;
   if (STATE.life.age > maxAge) dieNow('自然衰老');
   // v5.20：每 5 年套用投資收益
   if (STATE.life.age % 5 === 0 && STATE.life.age > 0) applyInvestmentReturn();
@@ -2945,7 +2963,7 @@ function buildBirthCertCard(c, life) {
         <tr><td class="bc-k">${t('intro.bc.mother')}</td><td class="bc-v">${mother ? escapeHtml(mother.name) : '—'}${md.age ? ` · ${md.age} ${t('unit.years')}` : ''}${md.job ? ` · ${escapeHtml(md.job)}` : ''}</td></tr>
         <tr><td class="bc-k">${t('intro.bc.housing')}</td><td class="bc-v">${escapeHtml(housing)}</td></tr>
         <tr><td class="bc-k">${t('intro.bc.religion')}</td><td class="bc-v">${escapeHtml(life.stats.religion || '—')}</td></tr>
-        <tr class="bc-stat"><td class="bc-k">${t('intro.bc.le')}</td><td class="bc-v">${c.le.toFixed(1)} ${t('unit.years')}</td></tr>
+        <tr class="bc-stat"><td class="bc-k">${t('intro.bc.le')}</td><td class="bc-v">${effectiveLe(c, life).toFixed(1)} ${t('unit.years')}</td></tr>
         <tr class="bc-stat"><td class="bc-k">${t('intro.bc.u5')}</td><td class="bc-v">${u5pct < 0.1 ? u5pct.toFixed(2) : u5pct.toFixed(1)}%</td></tr>
         <tr class="bc-stat"><td class="bc-k">${t('intro.bc.ppp')}</td><td class="bc-v">$${(c.ppp || 0).toLocaleString()}</td></tr>
       </tbody>
@@ -2996,7 +3014,7 @@ function renderLife() {
   const ageEl = $('#lifeAge');
   if (ageEl) ageEl.innerHTML = (STATE.life.age || 0) + '<small>' + t('unit.years') + '</small>';
   $('#lifeName2').textContent = (STATE.life.name.full || STATE.life.name.full_en) || '...';
-  $('#lifeLe').textContent = c.le;
+  $('#lifeLe').textContent = effectiveLe(c);
   $('#lifeSex').textContent = STATE.life.sex === 'M' ? t('sex.male') : t('sex.female');
   // 教育：顯示 0-4 級距 + 已就讀年數
   const educLabels = ['—', t('edu.0')+'（'+t('edu.pre')+'）', t('edu.1'), t('edu.2'), t('edu.3'), t('edu.4')];
@@ -3021,7 +3039,7 @@ function renderLife() {
     $('#lifeKids').textContent = '0';
   }
   // v5.37：進度條（4px scaleX，位於 sticky topbar 內）
-  const pct = Math.min(100, STATE.life.age / c.le * 100);
+  const pct = Math.min(100, STATE.life.age / effectiveLe(c) * 100);
   const bar = $('#lifeBar');
   if (bar) bar.style.transform = `scaleX(${(pct / 100).toFixed(4)})`;
   // 角色簡介
@@ -3655,7 +3673,7 @@ function renderEnd() {
   $('#endCause').textContent = causeLabel(life.cause);
   $('#endName').textContent = life.name.full || life.name.full_en || '—';
   $('#endPortrait').innerHTML = pixelPortraitSVG(life.countryData, life.age, life.sex);
-  $('#endLe').textContent = t('end.lifespan_le', { age: life.deathAge, le: c.le });
+  $('#endLe').textContent = t('end.lifespan_le', { age: life.deathAge, le: effectiveLe(c, life) });
   const past = loadPastLives();
   $('#endPastCount').textContent = past.length;
   // 證書（guilloche）
@@ -4872,7 +4890,7 @@ function runLab(countryCode, era, sexMode, N) {
     while (!life.died && life.age < 120) {
       life.age += 1;
       life.yearOffset += 1;
-      if (Math.random() < pDie(life.age, life.countryData, sex)) {
+      if (Math.random() < pDie(life.age, life.countryData, sex, life)) {
         life.died = true;
         life.deathAge = life.age;
         const cause = pickCause(life.countryData, life.age, sex);
@@ -6593,7 +6611,7 @@ function downloadLifeCertPNG() {
   // 大字歲數
   svgParts.push(`<text x="${W/2}" y="250" font-size="48" fill="#1a1a1a" text-anchor="middle" font-weight="bold">${life.deathAge || life.age} ${t('unit.years')}</text>`);
   // 副標題
-  svgParts.push(`<text x="${W/2}" y="285" font-size="14" fill="#5a4a3a" text-anchor="middle">${LANG==='en'?'Life Expectancy':'預期壽命'} ${c?.le || '—'} ${t('unit.years')}</text>`);
+  svgParts.push(`<text x="${W/2}" y="285" font-size="14" fill="#5a4a3a" text-anchor="middle">${LANG==='en'?'Life Expectancy':'預期壽命'} ${c ? effectiveLe(c) : '—'} ${t('unit.years')}</text>`);
   // 詳情
   const rowY = 320;
   const rows = [
@@ -6678,7 +6696,7 @@ function downloadBirthCardPNG() {
   // 大字年齡
   parts.push(`<text x="${W/2}" y="270" font-size="56" fill="#1a1a1a" text-anchor="middle" font-weight="bold">${life.age} ${t('unit.years')}</text>`);
   // 副標題
-  parts.push(`<text x="${W/2}" y="305" font-size="14" fill="#5a4a3a" text-anchor="middle">${isEn?'Life expectancy':'預期壽命'} ${c.le} ${t('unit.years')} · ${isEn?'Born in':'出生於'} ${escapeHtml(loc.name)}</text>`);
+  parts.push(`<text x="${W/2}" y="305" font-size="14" fill="#5a4a3a" text-anchor="middle">${isEn?'Life expectancy':'預期壽命'} ${effectiveLe(c)} ${t('unit.years')} · ${isEn?'Born in':'出生於'} ${escapeHtml(loc.name)}</text>`);
   // 家庭背景
   const fd = life.fatherDetail || {};
   const md = life.motherDetail || {};
