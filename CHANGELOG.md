@@ -5,6 +5,14 @@
 > **v5.89 → v6.09 的 21 個修正合併報告**：[`evidence/CONSOLIDATED-v5.89-v6.09.md`](evidence/CONSOLIDATED-v5.89-v6.09.md)
 > （每個缺陷的完整推導、原始數據與量測腳本都留有個別證據檔，連結如下）
 
+## v6.30 — 分享预览卡片与结构化数据
+
+- index.html <head> 直接写入 og:type / og:url / og:site_name / og:title / og:description / og:image（含宽高、alt）/ og:locale、Twitter summary_large_image、canonical、WebApplication JSON-LD。WhatsApp、Facebook、LinkedIn、Telegram 的抓取程序不执行 JS，所以一律写在原始 HTML。
+- 预览图放在主站：https://www.zenmatrix.org/og/life-simulator.png（1200×630）。
+- 移除原本单独的 canonical 与 og:url，避免重复。
+- <title> 静态文字与 8 种语言的 i18n title 加上「 | Life Simulator」（英文本来就有）。
+- APP_BUILD 更新为 2026-11-07。
+
 ## v6.29 — 「人生星光馆」：避开忌讳字眼
 
 - 华人忌讳「死」，简体中文显示时统一改成较吉祥的说法（只动显示层，资料与 API 不变）：
