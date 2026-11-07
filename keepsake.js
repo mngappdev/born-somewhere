@@ -1527,7 +1527,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
         <div class="mem-kicker">🕯️ ${tx('模拟人生 · 公开追思馆', 'Life Simulator · Memorial hall')}</div>
         <h1>${esc(H(s.name))}</h1>
         <p class="mem-meta">${s.c.flag} ${esc(H(s.loc.name))} · ${fmtBirth(life)} – ${s.dy} · ${tx('享年', 'Aged')} ${s.age}${s.cause ? ' · ' + esc(H(s.cause)) : ''}</p>
-        <button class="mem-candle ${lit ? 'lit' : ''}" id="memCandle" type="button"><span class="mem-flame">🕯️</span> <b id="memCount">${data.candles || 0}</b> <span>${lit ? tx('你已点过蜡烛', 'You lit a candle') : tx('点一根蜡烛', 'Light a candle')}</span></button>
+        <button class="mem-candle ${lit ? 'lit' : ''}" id="memCandle" type="button"><span class="mem-flame">${tx("🌟", "🕯️")}</span> <b id="memCount">${data.candles || 0}</b> <span>${lit ? tx('你已点过蜡烛', 'You lit a candle') : tx('点一根蜡烛', 'Light a candle')}</span></button>
       </div>
       <div class="ks-grid mem-grid" id="memGrid"><div class="ks-loading">${tx('正在画这一生⋯', 'Drawing this life…')}</div></div>
       <div id="memWish"></div>

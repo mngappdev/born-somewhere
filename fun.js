@@ -34,11 +34,25 @@
   try { if (window.OpenCC) t2s = window.OpenCC.Converter({ from: 'tw', to: 'cn' }); } catch (e) { t2s = null; }
   const convCache = new Map();
   const HAN = /[㐀-鿿]/;
+  /* v6.29：华人忌讳「死」——简体显示时换成较吉祥的说法。
+   * 只动显示层（DOM / canvas / 分享文案），资料层与 API 不变。
+   * 统计用语（死亡率、死亡机率）与求助提示保留原意，不改。 */
+  const SOFT = [
+    [/公开追思馆/g, '人生星光馆'], [/公开追思页/g, '星光页'], [/公开追思/g, '人生星光馆'],
+    [/追思馆/g, '星光馆'], [/追思页/g, '星光页'], [/最近的追思/g, '最近点亮的人生'], [/可追思的人生/g, '可回顾的人生'], [/追思/g, '星光'],
+    [/点一[根支]蜡烛/g, '点亮一颗星'], [/已点 ?(\d+) ?支蜡烛/g, '已点亮 $1 颗星'], [/点过蜡烛/g, '点亮过星星'], [/蜡烛/g, '星星'],
+    [/🕯️?/gu, '🌟'],
+    [/讣闻/g, '人生谢幕'], [/死亡证书/g, '人生证书'], [/死亡记录/g, '人生记录'],
+    [/死亡原因/g, '落幕原因'], [/死因/g, '落幕原因'], [/寿终正寝/g, '福寿双全'],
+    [/因 ?([^\s，。]+?) ?离世/g, '因$1走完一生'], [/离世时/g, '人生落幕时'], [/离世/g, '远行'],
+    [/去世前/g, '人生最后'], [/去世/g, '远行'], [/过世/g, '离开'], [/逝世/g, '谢幕'],
+  ];
+  const soften = (s) => { for (const [re, to] of SOFT) s = s.replace(re, to); return s; };
   function toHans(s) {
     if (!t2s || !s || typeof s !== 'string' || !HAN.test(s)) return s;
     let out = convCache.get(s);
     if (out === undefined) {
-      try { out = t2s(s); } catch (e) { out = s; }
+      try { out = soften(t2s(s)); } catch (e) { out = s; }
       if (convCache.size > 20000) convCache.clear();
       convCache.set(s, out);
     }
