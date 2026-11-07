@@ -189,6 +189,14 @@
     "This life is now in the memorial hall (Keepsakes → Public memorial to delete it or turn this off)": ["這段人生已放進人生星光館（紀念品 → 星光館可刪除或關閉自動發布）", "이 인생이 추모관에 올라갔어요 (기념품 → 공개 추모에서 삭제하거나 자동 공개를 끌 수 있어요)", "この人生を星光館に加えました（記念品 → 公開ページで削除・自動公開オフができます）", "Cuộc đời này đã vào nhà tưởng niệm (Kỷ niệm → Tưởng niệm công khai để xóa hoặc tắt tự động)", "Cette vie est maintenant au mémorial (Souvenirs → Mémorial public pour la supprimer ou désactiver)", "ชีวิตนี้อยู่ในหอรำลึกแล้ว (ของที่ระลึก → หอรำลึกสาธารณะ เพื่อลบหรือปิดอัตโนมัติ)", "Esta vida ya está en el memorial (Recuerdos → Memorial público para borrarla o desactivarlo)"],
     "No one has shared a life publicly yet. Finished lives appear here automatically.": ["還沒有其他玩家公開人生。人生結束後會自動出現在這裡。", "아직 공개된 인생이 없어요. 끝난 인생은 자동으로 여기에 나타나요.", "まだ公開された人生はありません。終わった人生は自動でここに表示されます。", "Chưa có ai chia sẻ cuộc đời công khai. Các cuộc đời đã kết thúc sẽ tự động hiện ở đây.", "Personne n’a encore partagé de vie. Les vies terminées apparaissent ici automatiquement.", "ยังไม่มีใครแชร์ชีวิตสาธารณะ ชีวิตที่จบลงจะขึ้นที่นี่โดยอัตโนมัติ", "Nadie ha compartido una vida todavía. Las vidas terminadas aparecen aquí automáticamente."],
 
+    /* ---------- v6.36：app.js 前世纪录、讣闻页 / 首页的小字 ---------- */
+    "y|歲": ["歲", "세", "歳", "tuổi", "ans", "ปี", "años"],
+    "Show {0} more past lives": ["再顯示 {0} 段過去的人生", "지난 인생 {0}개 더 보기", "過去の人生をあと{0}件表示", "Hiện thêm {0} kiếp trước", "Afficher {0} vies de plus", "แสดงชีวิตก่อนหน้าเพิ่มอีก {0}", "Mostrar {0} vidas más"],
+    "Replay": ["再看一次", "다시 보기", "もう一度見る", "Xem lại", "Revoir", "ดูอีกครั้ง", "Ver de nuevo"],
+    "Delete": ["刪除", "삭제", "削除", "Xóa", "Supprimer", "ลบ", "Borrar"],
+    "How long could the real me live?": ["測測現實中的我能活到幾歲", "현실의 나는 몇 살까지 살까?", "現実のわたしは何歳まで生きられる？", "Ngoài đời thật tôi sống được bao lâu?", "Et moi, dans la vraie vie, jusqu’à quel âge ?", "ตัวฉันในชีวิตจริงจะอยู่ได้ถึงกี่ปี?", "¿Cuánto viviría yo en la vida real?"],
+    "Full health report ({0} items)": ["看完整健康分析（{0} 項）", "전체 건강 분석 보기 ({0}개 항목)", "健康分析をすべて見る（{0}項目）", "Xem toàn bộ phân tích sức khỏe ({0} mục)", "Bilan de santé complet ({0} éléments)", "ดูรายงานสุขภาพทั้งหมด ({0} รายการ)", "Informe de salud completo ({0} puntos)"],
+
     "Family tree": ["族譜", "가계도", "家系図", "Gia phả", "Arbre généalogique", "ผังตระกูล", "Árbol familiar"]
   };
 

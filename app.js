@@ -26,7 +26,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.35.0';
+const APP_VERSION = '6.36.0';
 const APP_BUILD = '2026-11-07';
 
 const STATE = {
@@ -906,8 +906,11 @@ function t(key, ...vals) {
 /* v5.46：死因 i18n — 死因在資料層以中文儲存，顯示時翻譯 */
 function causeLabel(cause) {
   if (!cause) return '';
-  return t('cause.' + cause);
+  const s = t('cause.' + cause);
+  return s === 'cause.' + cause ? cause : s;   // v6.36：沒有翻譯時顯示原文，不顯示鍵名
 }
+/* v6.36：零散的介面字（沒有 i18n 鍵的）走 xl.js 字典 */
+function _xl(zh, en) { return window.BornXL ? BornXL.t(zh, en) : (/^zh/.test(LANG) ? zh : en); }
 
 async function loadData() {
   if (!CACHE.countries) {
@@ -915,13 +918,26 @@ async function loadData() {
     CACHE.countries = await r1.json();
     COUNTRIES = CACHE.countries;
   }
-  if (!CACHE.i18n) {
-    const r2 = await fetch('data/i18n.json');
-    CACHE.i18n = await r2.json();
-    I18N = CACHE.i18n;
-  }
   // 語言偏好
   LANG = localStorage.getItem(STORAGE_KEY + ':lang') || detectLang();
+  if (!CACHE.i18n) {
+    CACHE.i18n = {};
+    I18N = CACHE.i18n;
+  }
+  await loadLang(LANG);
+}
+/* v6.36：只下載目前語言（data/i18n/<lang>.json，約 1/9 大小）；拆分檔不存在時退回整包 i18n.json */
+const _langLoading = {};
+function loadLang(lang) {
+  if (I18N[lang]) return Promise.resolve(true);
+  if (_langLoading[lang]) return _langLoading[lang];
+  _langLoading[lang] = fetch(`data/i18n/${encodeURIComponent(lang)}.json`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(d => { I18N[lang] = d; return true; })
+    .catch(() => fetch('data/i18n.json').then(r => r.json()).then(all => { Object.assign(I18N, all); return !!I18N[lang]; }))
+    .catch(() => false)
+    .finally(() => { delete _langLoading[lang]; });
+  return _langLoading[lang];
 }
 function detectLang() {
   // v6.13：預設簡體中文（使用者手動切換後以 localStorage 為準）
@@ -939,7 +955,14 @@ function detectLangFromBrowser() {
   if (nav.startsWith('es')) return 'es';
   return 'zh-Hant';
 }
+let _langWanted = null;
 function setLang(lang) {
+  _langWanted = lang;
+  // v6.36：該語言還沒下載時，先下載再切換（再呼叫一次 window.setLang，外層包裝也會跟著重跑）。
+  // 下載期間使用者又換了別的語言，就以最後一次的選擇為準。
+  if (!I18N[lang]) {
+    return loadLang(lang).then(ok => { if (ok && I18N[lang] && _langWanted === lang) window.setLang(lang); });
+  }
   LANG = lang;
   localStorage.setItem(STORAGE_KEY + ':lang', lang);
   document.documentElement.lang = lang;
@@ -1894,7 +1917,7 @@ function milestoneEvents(life, newAge) {
   if (events.length === 0 && newAge >= 4) {
     const evt = generateYearlyEvent(life);
     if (evt) {
-      const text = (LANG === 'en' ? evt.en : evt.zh);
+      const text = _xl(evt.zh, evt.en);   // v6.36：其他语言走 xl-events.js 字典
       events.push({ age: newAge, kind: 'milestone', icon: evt.icon, text });
       life.latestEvent = { age: newAge, icon: evt.icon, text };
     }
@@ -2183,13 +2206,13 @@ function showFocusChoice() {
     rest:   '🌳 +3 幸福 · +1 健康',
   };
   const body = $('#focusBody');
-  if (body) body.innerHTML = focusOpts.map(o => `<button class="focus-btn" data-focus="${o.id}" title="${(tooltips[o.id] || '').replace(/"/g,'&quot;')}"><span class="fb-icon">${o.icon}</span><span class="fb-label">${isEn ? o.en : o.zh}</span><span class="fb-tip">${tooltips[o.id] || ''}</span></button>`).join('');
+  if (body) body.innerHTML = focusOpts.map(o => `<button class="focus-btn" data-focus="${o.id}" title="${(tooltips[o.id] || '').replace(/"/g,'&quot;')}"><span class="fb-icon">${o.icon}</span><span class="fb-label">${_xl(o.zh, o.en)}</span><span class="fb-tip">${tooltips[o.id] || ''}</span></button>`).join('');
   body.querySelectorAll('.focus-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const focus = btn.dataset.focus;
       STATE.life.focus = focus;
       const opt = focusOpts.find(o=>o.id===focus);
-      STATE.life.log.push({ age, kind:'focus', icon: opt?.icon || '·', text: `${isEn?'Focus':'重心'}：${opt?(isEn?opt.en:opt.zh):focus}` });
+      STATE.life.log.push({ age, kind:'focus', icon: opt?.icon || '·', text: `${_xl('重心', 'Focus')}：${opt ? _xl(opt.zh, opt.en) : focus}` });
       logLife(isEn ? `Focus: ${opt?.en}` : `這一年焦點：${opt?.zh}`);
       applyFocusEffects(focus);
       closeModal('focusModal');
@@ -2255,8 +2278,8 @@ function showFinanceModal(forceOpt) {
         ${INVEST_OPTIONS.map(o => `
           <button class="fin-opt ${o.id===currentInvest?'active':''}" data-id="${o.id}">
             <span class="fin-icon">${o.id==='savings'?'🏦':o.id==='bonds'?'📜':o.id==='60-40'?'📊':o.id==='index'?'📈':o.id==='global'?'🌐':'🎲'}</span>
-            <span class="fin-name">${isEn?o.en:o.zh}</span>
-            <span class="fin-desc">${isEn?o.desc.en:o.desc.zh}</span>
+            <span class="fin-name">${_xl(o.zh, o.en)}</span>
+            <span class="fin-desc">${_xl(o.desc.zh, o.desc.en)}</span>
           </button>
         `).join('')}
       </div>
@@ -3218,7 +3241,7 @@ function renderLifeTrajectory() {
       <text x="${W/2}" y="${H-15}" font-size="8" fill="#999" text-anchor="middle">${isEn?'Age':'年齡'}</text>
       <g font-size="9" font-weight="600" transform="translate(${W-150}, 8)">
         <rect x="0" y="0" width="140" height="74" fill="white" stroke="#d8cdb8" rx="4"/>
-        ${lines.map((L, i) => `<line x1="6" y1="${14 + i*15}" x2="20" y2="${14 + i*15}" stroke="${L.color}" stroke-width="2"/><text x="24" y="${17 + i*15}" fill="#5a4a3a">${isEn?L.en:L.zh}</text>`).join('')}
+        ${lines.map((L, i) => `<line x1="6" y1="${14 + i*15}" x2="20" y2="${14 + i*15}" stroke="${L.color}" stroke-width="2"/><text x="24" y="${17 + i*15}" fill="#5a4a3a">${_xl(L.zh, L.en)}</text>`).join('')}
         <line x1="6" y1="${14 + 4*15}" x2="20" y2="${14 + 4*15}" stroke="#a16207" stroke-width="1.5" stroke-dasharray="4 2"/><text x="24" y="${17 + 4*15}" fill="#5a4a3a">${isEn?'Family BG':'家境'}</text>
       </g>
     </svg>
@@ -3728,11 +3751,11 @@ function renderEndPastRecords(past) {
     <div class="pr-row" data-i="${i}">
       <div class="pr-info">
         <strong>${p.name || '—'}</strong>
-        <span class="muted">${p.country || '—'} · ${p.sex === 'M' ? '男' : (p.sex === 'F' ? '女' : '?')} · ${p.age || 0} 歲 · ${p.cause || '—'}</span>
+        <span class="muted">${p.country || '—'} · ${p.sex === 'M' ? _xl('男', 'M') : (p.sex === 'F' ? _xl('女', 'F') : '?')} · ${p.age || 0} ${_xl('歲', 'y')} · ${p.cause ? causeLabel(p.cause) : '—'}</span>
       </div>
       <div class="pr-actions">
-        <button class="ghost pr-replay" data-i="${i}">↻ 再看一次</button>
-        <button class="ghost pr-del" data-i="${i}">🗑️</button>
+        <button class="ghost pr-replay" data-i="${i}">↻ ${_xl('再看一次', 'Replay')}</button>
+        <button class="ghost pr-del" data-i="${i}" aria-label="${_xl('刪除', 'Delete')}">🗑️</button>
       </div>
     </div>
   `).join('');

@@ -410,3 +410,66 @@ body.mem-open { overflow: hidden; }
 .dy-kids button { text-align: left; }
 .dy-kids small { opacity: .8; margin-left: 4px; }
 .dy-end { margin: 8px 0 0; }
+
+/* ---------- v6.36：手机体验 ---------- */
+/* 首页：插画缩小（width/height 属性只是给浏览器预留比例） */
+.illus-strip img { height: auto; }
+@media (max-width: 600px) {
+  .illus-strip { margin-top: 12px; gap: 10px; flex-wrap: nowrap; }
+  .illus-strip img { width: 76px; border-radius: 14px; }
+  .hero-title { margin: 14px 0 10px; }
+  .hero-title > span:nth-child(2) { font-size: 50px; }
+  .hero-sub { font-size: 15px; line-height: 1.6; margin-bottom: 16px; }
+  .brand { letter-spacing: .12em; font-size: 19px; }
+}
+/* 首页底部的固定「出生」按钮 */
+.ux-cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg, #f4f1eb) 70%, rgba(244,241,235,0)); display: flex; justify-content: center; }
+.ux-cta[hidden] { display: none; }
+.ux-cta-btn { width: min(420px, 100%); margin: 0 !important; box-shadow: 0 8px 24px -10px rgba(0,0,0,.35); }
+body.theme-dark .ux-cta { background: linear-gradient(to top, #0d1316 70%, rgba(13,19,22,0)); }
+body.ux-cta-on .help-fab { bottom: 92px; }
+body.ux-cta-on .toast { bottom: 96px; }
+body.ux-cta-on .app-footer { padding-bottom: 88px; }
+/* 讣闻页：搬进卡片的成就 / 纪念品面板，左右留白跟卡片内其他区块一致 */
+.end-cert.ux-ordered > #ksEndPanel, .end-cert.ux-ordered > #funEndPanel { margin-left: 20px; margin-right: 20px; }
+.end-cert.ux-ordered > .cert-actions { margin-top: 4px; }
+@media (max-width: 600px) { .end-cert.ux-ordered > #ksEndPanel, .end-cert.ux-ordered > #funEndPanel { margin-left: 14px; margin-right: 14px; } }
+/* 健康报告：完整内容折叠 */
+.fun-hr-more { margin-top: 10px; }
+.fun-hr-more > summary { cursor: pointer; font-weight: 700; padding: 10px 0; min-height: 40px; list-style-position: inside; }
+.fun-hr-real { margin: 4px 0 6px; }
+/* 点按区域至少 40px（WCAG 2.5.8 建议 ≥ 24px，手机上 40–44px 比较好按） */
+@media (pointer: coarse), (max-width: 760px) {
+  .footer-btn, .footer-link { min-height: 40px; display: inline-flex; align-items: center; }
+  .end-past-actions button, .pr-actions button, .lnk { min-height: 40px; }
+  .pr-del { min-width: 40px; }
+  .navbtn { min-height: 40px; }
+}
+/* Windows 国旗：只有侦测到不支援时，ux.js 才加 .flag-poly 并载入字体 */
+html.flag-poly {
+  --serif: "Twemoji Country Flags", "Cormorant Garamond", "Source Han Serif TC", "Noto Serif TC", "Times New Roman", serif;
+  --sans: "Twemoji Country Flags", -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", sans-serif;
+  --mono: "Twemoji Country Flags", "SF Mono", ui-monospace, "JetBrains Mono", "Courier New", monospace;
+}
+
+/* 人生页（手机）：资料卡改成「头像左、名字右」，今年与事件纪录排到前面 */
+@media (max-width: 600px) {
+  #view-life .cert-body { display: grid; grid-template-columns: 88px minmax(0, 1fr); column-gap: 14px; align-items: center; }
+  #lifePortrait { grid-row: 1 / span 2; margin: 0; }
+  #lifePortrait svg { width: 88px; height: 88px; }
+  #lifeName2 { font-size: 24px; margin: 0; align-self: end; text-align: left; }
+  #view-life .cert-age-row { justify-content: flex-start; margin: 0; align-self: start; }
+  #view-life .cert-body > :not(#lifePortrait):not(#lifeName2):not(.cert-age-row) { grid-column: 1 / -1; }
+  #view-life .cert-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); font-size: 13px; gap: 4px 10px; padding: 8px 10px; margin-top: 10px; }
+  .life-col-b { display: flex; flex-direction: column; }
+  .life-col-b > .life-meta-controls { order: -4; }
+  .life-col-b > #lifeManualDecisions { order: -3; }
+  .life-col-b > #lifeThisYear { order: -2; }
+  .life-col-b > #lifeEventsFeed { order: -1; }
+}
+
+/* 导航可横向卷动时，边缘渐隐提示还有标签（ux.js 加 .ux-more-l / .ux-more-r） */
+.topnav.ux-more-r { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); }
+.topnav.ux-more-l { -webkit-mask-image: linear-gradient(to left, #000 82%, transparent); mask-image: linear-gradient(to left, #000 82%, transparent); }
+.topnav.ux-more-l.ux-more-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(to right, transparent, #000 14%, #000 86%, transparent); }
+@media (max-width: 600px) { #view-life .cert-meta .meta-row:has(#lifeCountryInfo) { grid-column: 1 / -1; } }

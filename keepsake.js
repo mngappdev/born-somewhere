@@ -172,7 +172,7 @@
       if (logo) ctx.drawImage(logo, 96, HGT - 150, 130, 130 * logo.height / logo.width);
       ctx.fillStyle = '#888'; ctx.font = `400 22px ${FONT}`; ctx.fillText('www.zenmatrix.org', 240, HGT - 104);
     } else {
-      const coin = await loadImg('assets/zenmatrix-coin.png');
+      const coin = await loadImg('assets/zenmatrix-coin-96.png');
       if (coin) ctx.drawImage(coin, 64, HGT - 76, 36, 36);
       ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.font = `400 24px ${FONT}`;
       ctx.fillText(`${tx('模拟人生', 'Life Simulator')} · ZenMatrix`, coin ? 110 : 64, HGT - 48);
