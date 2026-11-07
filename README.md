@@ -1,4 +1,4 @@
-# born-somewhere v6.30
+# born-somewhere v6.31
 
 172 國真實統計人生模擬遊戲。從 1in8b.life（原作 v0.7.68 beta）的功能完整移植並擴充，**融合了 zu-pu 的族譜模組**（GEDCOM 5.5.1 雙向互通）。
 
@@ -130,7 +130,7 @@ zu-pu v1 已整合為本 repo 的 `zu-pu/` 子目錄（含 30 人張氏範例家
 
 ## 貢獻
 
-基於 1in8b.life（原作，CC BY 4.0）+ zu-pu v1 的概念延伸。資料來源：聯合國《世界人口展望2024》、世界銀行 WDI、WHO、UNESCO UIS、UNDP HDR、ILO、UNAIDS、UNODC、UNICEF、生活滿意度報告2024。
+程式碼以 MIT 授權釋出（見 [LICENSE](LICENSE)），第三方內容與資料來源見 [ATTRIBUTIONS.md](ATTRIBUTIONS.md)。玩法靈感來自 1in8b.life（該站未聲明程式或內容的開放授權；本作為獨立實作，與原作無隸屬關係）+ zu-pu v1 的概念延伸。資料來源：聯合國《世界人口展望2024》、世界銀行 WDI、WHO、UNESCO UIS、UNDP HDR、ILO、UNAIDS、UNODC、UNICEF、生活滿意度報告2024。
 
 ## 部署
 

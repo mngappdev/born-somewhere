@@ -5,6 +5,16 @@
 > **v5.89 → v6.09 的 21 個修正合併報告**：[`evidence/CONSOLIDATED-v5.89-v6.09.md`](evidence/CONSOLIDATED-v5.89-v6.09.md)
 > （每個缺陷的完整推導、原始數據與量測腳本都留有個別證據檔，連結如下）
 
+## v6.31 — 授权标示改正
+
+- 程序代码的授权是 MIT（LICENSE 文件、GitHub 都是 MIT），但页面一直写「CC BY 4.0」，9 种语言的页脚与隐私权政策「授权」段已改正。
+- 隐私权政策「授权」段列出：MIT 版权人（Royce 上游、ZenMatrix 修改）、取自 juren056/1in8billion.live（MIT）的内容、1in8b.life 只是玩法灵感且无隶属关系、统计数据来源与授权；附「授权全文」「完整致谢」连结。
+- 页脚「MIT · 开源」连到网站上的 LICENSE.txt；网站同时提供 ATTRIBUTIONS.md 与 vendor 授权文件。
+- LICENSE 加上 ZenMatrix 对 fork 修改部分的版权行（保留上游原有版权声明）。
+- JSON-LD license 改为 MIT。
+- README 删除「1in8b.life（原作，CC BY 4.0）」：1in8b.life 并未声明开放授权。
+- ATTRIBUTIONS.md 新增：本作品授权、1in8b.life 说明、统计数据来源；注明 ZenMatrix 标志与微信二维码不在 MIT 范围内。
+
 ## v6.30 — 分享预览卡片与结构化数据
 
 - index.html <head> 直接写入 og:type / og:url / og:site_name / og:title / og:description / og:image（含宽高、alt）/ og:locale、Twitter summary_large_image、canonical、WebApplication JSON-LD。WhatsApp、Facebook、LinkedIn、Telegram 的抓取程序不执行 JS，所以一律写在原始 HTML。
