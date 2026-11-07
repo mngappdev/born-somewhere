@@ -366,3 +366,30 @@ body.mem-open { overflow: hidden; }
 .rl-cardwrap { margin: 12px 0; text-align: center; }
 .rl-cardimg { width: 100%; max-width: 360px; border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.25); }
 @media (prefers-color-scheme: dark) { .rl-big { color: #ff8fa8; } }
+
+/* v6.33 同一个起点挑战 */
+.ch-end { margin: 14px 0; }
+.ch-invite { display: flex; gap: 14px; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, rgba(23,63,95,.12), rgba(23,63,95,.04)); border: 1px solid rgba(23,63,95,.25); }
+.ch-invite p { margin: 4px 0 0; font-size: 14px; opacity: .85; line-height: 1.5; }
+.ch-invite .primary { flex: 0 0 auto; }
+@media (max-width: 520px) { .ch-invite { flex-direction: column; align-items: stretch; } }
+.ch-vs { padding: 16px; border-radius: 14px; border: 2px solid #173f5f; background: rgba(23,63,95,.06); }
+.ch-vs.win { border-color: #2e7d32; background: rgba(46,125,50,.07); }
+.ch-vs.lose { border-color: #c77700; background: rgba(240,160,32,.08); }
+.ch-vs h3 { margin: 0 0 4px; }
+.ch-vs > p { margin: 0 0 10px; }
+.ch-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ch-table th, .ch-table td { padding: 7px 6px; border-bottom: 1px solid rgba(127,127,127,.18); text-align: right; }
+.ch-table th:first-child, .ch-table td:first-child { text-align: left; }
+.ch-table td.w { font-weight: 800; color: #2e7d32; }
+.ch-table td.w::after { content: ' ✓'; }
+.ch-card { max-width: 520px; }
+.ch-lead { line-height: 1.6; }
+.ch-start { display: flex; gap: 14px; align-items: center; padding: 12px 14px; border-radius: 12px; background: rgba(127,127,127,.08); margin: 10px 0; }
+.ch-flag { font-size: 40px; }
+.ch-start-k { font-size: 12px; opacity: .7; }
+.ch-target { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0 4px; font-size: 14px; }
+.ch-target div { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 8px; background: rgba(127,127,127,.06); }
+.ch-note { font-size: 12px; text-align: center; }
+.ks-btnlink { text-decoration: none; display: inline-flex; align-items: center; }
+@media (prefers-color-scheme: dark) { .ch-table td.w { color: #81c784; } }
