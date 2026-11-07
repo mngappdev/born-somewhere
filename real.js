@@ -332,6 +332,14 @@
     if (q) open('link');
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  // v6.36：按钮在语言档载入前就建立了（那时 LANG 还是预设值），载入后整页重画时一起更新文字
+  const _renderAll = window.renderAll;
+  if (typeof _renderAll === 'function') window.renderAll = function () {
+    const r = _renderAll.apply(this, arguments);
+    const b = $('#rlEntry');
+    if (b) b.innerHTML = `🔍 ${tx('测测我的真实人生 · 我能活到几岁？', 'My real life · how long could I live?')}`; else addEntry();
+    return r;
+  };
   const _setLang = window.setLang;
   if (typeof _setLang === 'function') window.setLang = function () { const r = _setLang.apply(this, arguments); $('#rlEntry')?.remove(); addEntry(); return r; };
   window.BornReal = { open, score, world, pct, cohortExpect, QUIZ };

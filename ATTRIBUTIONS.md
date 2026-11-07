@@ -60,3 +60,7 @@ SOFTWARE.
 ## opencc-js (MIT)
 
 `vendor/opencc-t2cn.js`，授权见 `vendor/opencc-LICENSE.txt`。
+
+## Twemoji Country Flags（字体：CC BY 4.0；打包程序：MIT）
+
+`vendor/TwemojiCountryFlags.woff2`，来自 country-flag-emoji-polyfill 0.1.10（Copyright (c) 2022 TalkJS，MIT）。字体里的国旗图案来自 Twemoji（Copyright Twitter, Inc. and other contributors），以 CC BY 4.0 授权使用（https://creativecommons.org/licenses/by/4.0/）。只在不显示国旗 emoji 的浏览器（主要是 Windows）载入。授权见 `vendor/TwemojiCountryFlags-LICENSE.txt`。

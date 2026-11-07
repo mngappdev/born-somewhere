@@ -16,7 +16,7 @@
   const isEn = () => typeof LANG !== 'undefined' && LANG === 'en';
   const isZh = () => typeof LANG !== 'undefined' && (LANG === 'zh-Hans' || LANG === 'zh-Hant');
   // 非中文介面一律用英文（新功能只提供中英两种文案）
-  const tx = (zh, en) => (isZh() ? zh : en);
+  const tx = (zh, en) => (window.BornXL ? BornXL.t(zh, en) : (isZh() ? zh : en));
   const store = {
     get(k, d) { try { const v = localStorage.getItem(SK + ':' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(SK + ':' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } },
@@ -1365,7 +1365,7 @@
     if (intro && !$('#funZmIntro')) { intro.insertAdjacentHTML('afterend', `<div id="funZmIntro">${zmCard('home')}</div>`); }
     else if ($('#funZmIntro')) $('#funZmIntro').innerHTML = zmCard('home');
     const footerLink = $('#funZmFooter');
-    if (footerLink) footerLink.innerHTML = `<img class="zm-coin" src="assets/zenmatrix-coin.png" alt="" width="18" height="18">${esc(tx('ZenMatrix 出品', 'By ZenMatrix'))} · www.zenmatrix.org`;
+    if (footerLink) footerLink.innerHTML = `<img class="zm-coin" src="assets/zenmatrix-coin-96.png" alt="" width="18" height="18">${esc(tx('ZenMatrix 出品', 'By ZenMatrix'))} · www.zenmatrix.org`;
   }
   const _ri4 = window.renderIntro;
   window.renderIntro = function () { _ri4.apply(this, arguments); try { renderZm(); } catch (e) { /* ignore */ } };
@@ -1474,7 +1474,7 @@
     const s = life.stats || {}, c = life.countryData || {}, age = life.deathAge ?? life.age;
     const le = typeof effectiveLe === 'function' ? Math.round(effectiveLe(c, life)) : Math.round(c.le || 75);
     const traj = (life.trajectory || []).filter(p => typeof p.health === 'number');
-    const healthYears = (life.log || []).filter(e => e.kind === 'focus' && /健康|Health|🧘/.test(e.text || e.icon || '')).length;
+    const healthYears = (life.log || []).filter(e => e.kind === 'focus' && /健康|養生|Health|healthy|🧘|🏃|🥗/i.test((e.text || '') + ' ' + (e.icon || ''))).length;   // v6.36：其他语言的文字也算得到（看图示）
     const kids = Array.isArray(s.kids) ? s.kids.length : (s.kids || 0);
     const items = []; // {g:'good'|'warn'|'bad', icon, title, text, yrs (+ 有利 / − 不利), fix(可改变)}
     const add = (g, icon, title, text, yrs, fix) => items.push({ g, icon, title, text, yrs, fix });
@@ -1540,11 +1540,16 @@
         <div><div>${tx('活到', 'Lived to')} <b>${age}</b> ${tx('岁', '')} · ${tx('预期', 'expected')} ${le} ${tx('岁', '')}</div><div class="muted">${verdict}</div>
         ${gain > 0 ? `<div class="fun-hr-gain">⏳ ${tx(`改掉可改变的因素，这一生大约还能多活 ${gain} 年`, `Fixing the changeable factors could have added about ${gain} years`)}</div>` : `<div class="fun-hr-gain">🌿 ${tx('这一生的生活习惯已经很好了', 'This life already had healthy habits')}</div>`}</div>
       </div>
-      ${spark}
-      <div class="fun-hr-items">${items.map(x => `<div class="fun-hr-it ${x.g}"><span class="fun-hr-ic">${x.icon}</span><div><b>${esc(x.title)}</b>${x.yrs ? ` <span class="fun-hr-y">${x.yrs > 0 ? '+' : '−'}${Math.abs(x.yrs)} ${tx('年', 'y')}</span>` : ''}<div>${esc(x.text)}</div></div></div>`).join('')}</div>
       <h4>🌱 ${tx('更长寿的方法（给现实中的你）', 'How to live longer (for the real you)')}</h4>
-      <ol class="fun-hr-recs">${allRecs.map(r => `<li>${esc(r)}</li>`).join('')}</ol>
-      <p class="muted fun-cause-note">${tx('年数是依公开研究（WHO、柳叶刀等）的平均值粗估，用来比较轻重，不是医学诊断。', 'Year figures are rough averages from public research (WHO, The Lancet, etc.) for comparison only, not a diagnosis.')}</p>
+      <ol class="fun-hr-recs">${allRecs.slice(0, 3).map(r => `<li>${esc(r)}</li>`).join('')}</ol>
+      ${window.BornReal ? `<button class="ghost fun-hr-real" type="button" data-hr-real>🔍 ${tx('测测现实中的我能活到几岁', 'How long could the real me live?')}</button>` : ''}
+      <details class="fun-hr-more">
+        <summary>${tx(`看完整健康分析（${items.length} 项）`, `Full health report (${items.length} items)`)}</summary>
+        ${spark}
+        <div class="fun-hr-items">${items.map(x => `<div class="fun-hr-it ${x.g}"><span class="fun-hr-ic">${x.icon}</span><div><b>${esc(x.title)}</b>${x.yrs ? ` <span class="fun-hr-y">${x.yrs > 0 ? '+' : '−'}${Math.abs(x.yrs)} ${tx('年', 'y')}</span>` : ''}<div>${esc(x.text)}</div></div></div>`).join('')}</div>
+        ${allRecs.length > 3 ? `<ol class="fun-hr-recs" start="4">${allRecs.slice(3).map(r => `<li>${esc(r)}</li>`).join('')}</ol>` : ''}
+        <p class="muted fun-cause-note">${tx('年数是依公开研究（WHO、柳叶刀等）的平均值粗估，用来比较轻重，不是医学诊断。', 'Year figures are rough averages from public research (WHO, The Lancet, etc.) for comparison only, not a diagnosis.')}</p>
+      </details>
     </div>`;
   }
   const _re5 = window.renderEnd;
