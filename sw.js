@@ -1,9 +1,9 @@
-/* born-somewhere service worker v6.31
+/* born-somewhere service worker v6.32
  * Cache-first strategy for the static app shell + countries/i18n JSON.
  * Falls back to network when cache misses, then caches the response.
  */
-const CACHE_NAME = 'born-somewhere-v6.31';
-const APP_VERSION = '6.31.0';
+const CACHE_NAME = 'born-somewhere-v6.32';
+const APP_VERSION = '6.32.0';
 
 // Files we want in the offline shell. List both the entry HTML and the data
 // blob so the game can boot without network.
@@ -16,6 +16,7 @@ const APP_SHELL = [
   './fun.js',
   './fun.css',
   './keepsake.js',
+  './real.js',
   './vendor/qrcode-generator.js',
   './assets/zenmatrix-logo.jpg',
   './assets/zenmatrix-coin.png',
