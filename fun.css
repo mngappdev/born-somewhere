@@ -393,3 +393,20 @@ body.mem-open { overflow: hidden; }
 .ch-note { font-size: 12px; text-align: center; }
 .ks-btnlink { text-decoration: none; display: inline-flex; align-items: center; }
 @media (prefers-color-scheme: dark) { .ch-table td.w { color: #81c784; } }
+
+/* v6.34 家族传承 */
+.dy-end-wrap { margin: 14px 0; padding: 16px; border-radius: 14px; background: linear-gradient(135deg, rgba(122,74,30,.12), rgba(122,74,30,.03)); border: 1px solid rgba(122,74,30,.3); }
+.dy-end-wrap h3 { margin: 0 0 10px; }
+.dy-tree { display: grid; gap: 0; margin-bottom: 8px; }
+.dy-gen { display: flex; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(127,127,127,.07); }
+.dy-gen.cur { outline: 2px solid #b5803a; background: rgba(181,128,58,.12); }
+.dy-g { flex: 0 0 56px; font-weight: 800; color: #b5803a; font-size: 13px; padding-top: 2px; }
+.dy-main { line-height: 1.5; }
+.dy-sub { font-size: 13px; opacity: .8; }
+.dy-link { text-align: center; color: #b5803a; line-height: 1.4; }
+.dy-next { margin-top: 10px; }
+.dy-next p { margin: 4px 0 10px; font-size: 14px; line-height: 1.5; }
+.dy-kids { display: grid; gap: 8px; }
+.dy-kids button { text-align: left; }
+.dy-kids small { opacity: .8; margin-left: 4px; }
+.dy-end { margin: 8px 0 0; }

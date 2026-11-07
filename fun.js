@@ -729,6 +729,34 @@
     } catch (e) { /* fall back */ }
     return _randomName.apply(this, arguments);
   };
+  // v6.34：一家人的取名规则（父姓／父名制），出生时的家人与之后出生的孩子共用
+  function familyGen(eth, c, fname, used) {
+    if (eth === 'malay' || eth === 'indian') {
+      const fg = fname.split(/ (?:bin|binti|s\/o|d\/o) /)[0];
+      used.add(fg);
+      return (sex) => ethName(eth, sex, c, fg);
+    } else if (eth === 'chinese') {
+      const ln = fname.charAt(0);
+      const pair = CN_LAST.find(p => p[0] === ln);
+      used.add(fname.slice(1));
+      return (sex) => {
+        const n = ethName(eth, sex, c);
+        if (n && pair) { n.last = ln; n.full = ln + n.first; n.full_en = `${n.en_given ? n.en_given + ' ' : ''}${pair[1]} ${n.first_en}`; }
+        return n;
+      };
+    } else {
+      // 西式姓氏：跟父亲同姓（拉丁裔取父亲第一个姓 + 随机母姓）
+      const parts = fname.split(' ');
+      used.add(parts[0]);
+      const fl = eth === 'latino' ? parts[1] : parts.slice(1).join(' ');
+      return (sex) => {
+        const n = ethName(eth, sex, c);
+        if (n && fl) { n.last = eth === 'latino' ? `${fl} ${pk(LAT.L)}` : fl; n.full = n.full_en = `${n.first} ${n.last}`; }
+        return n;
+      };
+    }
+    return null;
+  }
   const _newLife = window.newLife;
   window.newLife = function (code) {
     const c = countryById(code);
@@ -746,31 +774,7 @@
       const fname = String(father.name);
       const used = new Set();
       const uniq = (sex, gen) => { let n; for (let i = 0; i < 12; i++) { n = gen(sex); if (n && !used.has(n.first)) break; } if (n) used.add(n.first); return n; };
-      let gen = null;
-      if (eth === 'malay' || eth === 'indian') {
-        const fg = fname.split(/ (?:bin|binti|s\/o|d\/o) /)[0];
-        used.add(fg);
-        gen = (sex) => ethName(eth, sex, c, fg);
-      } else if (eth === 'chinese') {
-        const ln = fname.charAt(0);
-        const pair = CN_LAST.find(p => p[0] === ln);
-        used.add(fname.slice(1));
-        gen = (sex) => {
-          const n = ethName(eth, sex, c);
-          if (n && pair) { n.last = ln; n.full = ln + n.first; n.full_en = `${n.en_given ? n.en_given + ' ' : ''}${pair[1]} ${n.first_en}`; }
-          return n;
-        };
-      } else {
-        // 西式姓氏：跟父亲同姓（拉丁裔取父亲第一个姓 + 随机母姓）
-        const parts = fname.split(' ');
-        used.add(parts[0]);
-        const fl = eth === 'latino' ? parts[1] : parts.slice(1).join(' ');
-        gen = (sex) => {
-          const n = ethName(eth, sex, c);
-          if (n && fl) { n.last = eth === 'latino' ? `${fl} ${pk(LAT.L)}` : fl; n.full = n.full_en = `${n.first} ${n.last}`; }
-          return n;
-        };
-      }
+      const gen = familyGen(eth, c, fname, used);
       const me = uniq(life.sex, gen);
       if (me) life.name = me;
       (fam.siblings || []).forEach(s => { const sn = uniq(s.sex, gen); if (sn) s.name = sn.full; });
@@ -778,6 +782,33 @@
     const rel = ETH_REL[eth];
     if (rel && life.stats) { const r = wpick(rel); life.stats.religion = isEn() ? r[1] : r[0]; }
     return life;
+  };
+
+  // v6.34：人生里之后出生的孩子也照家族规则取名（以前是随机的：马来族孩子的 binti 后面不是父亲的名字）
+  const _tickKids = window.tick;
+  window.tick = function () {
+    const r = _tickKids.apply(this, arguments);
+    try {
+      const L = STATE.life, eth = L && L.ethnicity, fam = L && L.family;
+      const kids = fam && fam.kids;
+      if (eth && kids && kids.some(k => !k._fn)) {
+        const father = L.sex === 'M' ? (L.name && (L.name.full || L.name.full_en)) : (fam.partner && (fam.partner.name || fam.partner.nameEn));
+        const used = new Set([L.name && L.name.first, fam.partner && String(fam.partner.name).split(/ (?:bin|binti|s\/o|d\/o) /)[0]].filter(Boolean));
+        kids.forEach(k => { if (k._fn) { used.add(String(k.name).split(' ')[0]); } });
+        const gen = father ? familyGen(eth, L.countryData, String(father), used) : null;
+        const uniq = (sex) => { let n; for (let i = 0; i < 12; i++) { n = gen(sex); if (n && !used.has(n.first)) break; } if (n) used.add(n.first); return n; };
+        kids.forEach(k => {
+          if (k._fn) return;
+          k._fn = 1;
+          if (!gen) return;
+          const n = uniq(k.sex); if (!n) return;
+          const old = k.name;
+          k.name = n.full; k.nameEn = n.full_en;
+          (L.log || []).forEach(e => { if (e.text && old && e.text.includes(old)) e.text = e.text.split(old).join(n.full); });
+        });
+      }
+    } catch (e) { /* ignore */ }
+    return r;
   };
   function syncSexEth() {
     const sx = STATE.birthSex || 'auto';
