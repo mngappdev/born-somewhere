@@ -306,3 +306,11 @@ body.mem-open { overflow: hidden; }
 .mem-recent h3 { font-size: 15px; } .mem-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .mem-list a { padding: 6px 12px; border-radius: 99px; background: rgba(255,255,255,.08); color: #f3ece2; text-decoration: none; font-size: 13px; }
 .mem-foot { text-align: center; margin-top: 24px; color: rgba(243,236,226,.55) !important; } .mem-foot .lnk { color: inherit; text-decoration: underline; }
+
+/* v6.27 大家分享的人生：公开追思 */
+.shared-public { display: grid; gap: 12px; margin-bottom: 12px; }
+.shared-sec { font-weight: 700; opacity: .8; margin: 6px 2px 0; }
+.shared-pub { display: block; text-decoration: none; color: inherit; border-left: 3px solid #e0a84a; }
+.shared-pub .shared-quote { opacity: .75; font-size: .92em; }
+.shared-own { font-size: .7em; padding: 1px 6px; border-radius: 8px; background: rgba(224,168,74,.2); }
+.shared-public-empty { opacity: .75; font-size: .92em; margin: 0 0 8px; }

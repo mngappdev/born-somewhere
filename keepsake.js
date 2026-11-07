@@ -1576,6 +1576,56 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
     if (id && /^[a-z0-9]{6,12}$/i.test(id)) openMemorialView(id.toLowerCase());
   })();
 
+  /* v6.27：「大家分享的人生」以前只读本机纪录（只看得到自己的）。
+   * 现在先放其他玩家公开的追思（/api/memorial 摘要），再放自己的人生。 */
+  let pubCache = null, pubAt = 0;
+  async function fetchPublic() {
+    if (pubCache && Date.now() - pubAt < 60000) return pubCache;
+    try { const r = await fetch(API); const j = await r.json(); pubCache = j.items || []; pubAt = Date.now(); } catch (e) { pubCache = pubCache || []; }
+    return pubCache;
+  }
+  function publicCards(items) {
+    const mine = loadPub();
+    const box = document.createElement('div');
+    box.className = 'shared-public';
+    box.id = 'sharedPublic';
+    if (!items.length) {
+      box.innerHTML = `<p class="shared-public-empty">🕯️ ${tx('还没有其他玩家公开人生。一段人生结束后，在「纪念品 → 公开追思」发布，就会出现在这里。', 'No one has shared a life publicly yet. When a life ends, publish it from Keepsakes → Public memorial and it will appear here.')}</p>`;
+      return box;
+    }
+    box.innerHTML = `<div class="shared-sec">🕯️ ${tx('公开追思', 'Public memorials')} · ${items.length}</div>` + items.map(x => {
+      const c = countryById(x.country);
+      const loc = c && typeof localize === 'function' ? localize(c) : null;
+      const cause = x.cause && typeof causeLabel === 'function' ? causeLabel(x.cause) : '';
+      const own = Object.prototype.hasOwnProperty.call(mine, x.id) || Object.values(mine).some(v => v && v.id === x.id);
+      return `<a class="shared-card shared-pub" href="?m=${encodeURIComponent(x.id)}" data-mem-id="${esc(x.id)}">
+        <div class="shared-head"><span class="shared-flag">${c ? c.flag : '🏳️'}</span><div>
+          <div class="shared-name">${esc(H(x.name || '—'))}${own ? ` <small class="shared-own">${tx('我发布的', 'mine')}</small>` : ''}</div>
+          <div class="shared-meta">${esc(H(loc?.name || x.country || '?'))} · ${x.age ?? '?'} ${tx('岁', 'y')}${cause ? ' · ' + esc(H(cause)) : ''}</div>
+        </div></div>
+        <div class="shared-quote">${tx('点开看这段人生 →', 'Open this life →')}</div>
+      </a>`;
+    }).join('') + `<div class="shared-sec">📖 ${tx('我自己的人生', 'My own lives')}</div>`;
+    box.querySelectorAll('[data-mem-id]').forEach(a => a.addEventListener('click', (e) => {
+      e.preventDefault();
+      track('shared_public_open', {});
+      openMemorialView(a.dataset.memId);
+    }));
+    return box;
+  }
+  const _renderShared = window.renderSharedLives;
+  window.renderSharedLives = function (lives) {
+    if (_renderShared) _renderShared(lives);
+    const wrap = $('#sharedFeed'), list = $('#sharedList');
+    if (!wrap || !list) return;
+    fetchPublic().then(items => {
+      document.getElementById('sharedPublic')?.remove();
+      if (!items.length && !(lives && lives.length)) return;
+      wrap.hidden = false;
+      list.parentNode.insertBefore(publicCards(items), list);
+    });
+  };
+
   /* ---------------- 入口：讣闻页 + 书架 ---------------- */
   const _renderEnd = window.renderEnd;
   window.renderEnd = function () {
