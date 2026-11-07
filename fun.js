@@ -1422,16 +1422,96 @@
       <p class="muted fun-cause-note">${tx('依世界卫生组织等公开资料整理，仅供参考，不能替代医生的建议。', 'Based on WHO and other public sources. General information, not medical advice.')}</p>
     </div>`;
   }
+  /* v6.28：健康分析 + 长寿建议
+   * 依这一生的资料（吸烟、慢性病、人际、婚姻、幸福、教育、收入、健康焦点、国家）
+   * 逐项评估，并用公开研究的大致数字估算「可改变的因素」影响几年寿命。 */
+  function healthReport(life) {
+    const s = life.stats || {}, c = life.countryData || {}, age = life.deathAge ?? life.age;
+    const le = typeof effectiveLe === 'function' ? Math.round(effectiveLe(c, life)) : Math.round(c.le || 75);
+    const traj = (life.trajectory || []).filter(p => typeof p.health === 'number');
+    const healthYears = (life.log || []).filter(e => e.kind === 'focus' && /健康|Health|🧘/.test(e.text || e.icon || '')).length;
+    const kids = Array.isArray(s.kids) ? s.kids.length : (s.kids || 0);
+    const items = []; // {g:'good'|'warn'|'bad', icon, title, text, yrs (+ 有利 / − 不利), fix(可改变)}
+    const add = (g, icon, title, text, yrs, fix) => items.push({ g, icon, title, text, yrs, fix });
+    if (life.smoker) add('bad', '🚬', tx('吸烟', 'Smoking'), tx('长期吸烟平均减寿约 10 年；40 岁前戒烟，几乎能把这 10 年全部赚回来。', 'Smoking costs about 10 years on average; quitting before 40 wins back almost all of it.'), -10, true);
+    else add('good', '🚭', tx('不吸烟', 'Non-smoker'), tx('一辈子不吸烟，是这一生最大的健康资产之一。', 'Never smoking is one of the biggest health assets in this life.'), 0, false);
+    if (life.conditions?.diabetes) add('bad', '🩸', tx('糖尿病', 'Diabetes'), tx('糖尿病约减寿 6 年。控制血糖、体重、定期检查眼睛、肾脏与足部，可以大幅降低并发症。', 'Diabetes costs about 6 years. Controlling sugar and weight, and checking eyes, kidneys and feet, cuts complications a lot.'), -6, true);
+    if (life.conditions?.heart) add('bad', '❤️‍🩹', tx('心脏病史', 'Heart disease'), tx('按时吃药、控制血压与血脂、做心脏复健，复发风险可降低约三成。', 'Taking medicine, controlling blood pressure and cholesterol, and cardiac rehab cut recurrence by about a third.'), -5, true);
+    const soc = s.social ?? 50;
+    if (soc >= 65) add('good', '🤝', tx('人际关系好', 'Strong relationships'), tx(`人际值 ${Math.round(soc)}。研究发现，社交关系紧密的人存活率高约 50%，效果和戒烟相当。`, `Social score ${Math.round(soc)}. People with strong ties have ~50% better survival, similar to quitting smoking.`), +3, false);
+    else if (soc < 40) add('warn', '🫂', tx('比较孤单', 'Lonely'), tx(`人际值只有 ${Math.round(soc)}。长期孤独的伤害约等于每天抽 15 支烟。多见朋友、参加社团或做义工都有帮助。`, `Social score only ${Math.round(soc)}. Chronic loneliness is about as harmful as 15 cigarettes a day. Friends, clubs and volunteering help.`), -3, true);
+    if (s.married || s.partner) add('good', '💑', tx('有伴侣', 'Had a partner'), tx('有稳定伴侣的人平均更长寿，彼此提醒看病、吃药、少冒险。', 'People with a stable partner tend to live longer — they remind each other to see doctors and take fewer risks.'), +2, false);
+    const hap = s.happiness ?? 50;
+    if (hap < 35) add('warn', '😔', tx('压力与情绪', 'Stress and mood'), tx(`幸福值只有 ${Math.round(hap)}。长期压力会推高血压和心脏病风险。规律睡眠、运动、找人倾诉，必要时看心理医生。`, `Happiness only ${Math.round(hap)}. Long-term stress raises blood pressure and heart risk. Sleep, exercise, talk to someone, see a professional if needed.`), -2, true);
+    else if (hap >= 70) add('good', '😊', tx('心情开朗', 'Good mood'), tx(`幸福值 ${Math.round(hap)}。乐观的人心血管疾病风险较低，平均多活几年。`, `Happiness ${Math.round(hap)}. Optimistic people have lower heart risk and tend to live longer.`), +2, false);
+    if (healthYears >= 3) add('good', '🧘', tx('照顾身体', 'Took care of health'), tx(`有 ${healthYears} 年把重心放在健康。每周 150 分钟运动，平均可多活约 3–4 年。`, `${healthYears} years focused on health. 150 minutes of exercise a week adds about 3–4 years.`), +3, false);
+    else add('warn', '🏃', tx('运动不足', 'Not enough exercise'), tx(`这一生只有 ${healthYears} 年把重心放在健康。规律运动（每周 150 分钟快走）平均可多活约 3–4 年。`, `Only ${healthYears} years focused on health. Regular exercise (150 min brisk walking a week) adds about 3–4 years.`), 0, true);
+    const edu = s.education ?? 0;
+    if (edu >= 16) add('good', '🎓', tx('教育程度高', 'Well educated'), tx('受教育越多，越懂得预防、越会找到好的医疗资源。', 'More education means better prevention and better access to care.'), +2, false);
+    else if (edu < 9 && age >= 18) add('warn', '📚', tx('教育机会少', 'Little schooling'), tx('教育较少的人平均寿命短几年，主要是健康知识与工作环境的差别。多了解健康资讯一样有用。', 'Less schooling is linked to a few years shorter life, mostly through health knowledge and working conditions.'), -2, false);
+    if ((s.incomeQuartile || 4) <= 1) add('warn', '💰', tx('经济压力', 'Financial strain'), tx('收入低的人看病少、营养差、压力大。善用公共医疗、免费体检与疫苗。', 'Low income means less care, worse food and more stress. Use public healthcare, free screenings and vaccines.'), -3, false);
+    const ctry = (typeof localize === 'function' && c.id) ? localize(c).name : '';
+    if (le >= 82) add('good', '🌏', tx(`生在${ctry}`, `Born in ${ctry}`), tx(`${ctry}预期寿命约 ${le} 岁，医疗与公共卫生条件好。`, `Life expectancy in ${ctry} is about ${le}; healthcare is good.`), 0, false);
+    else if (le < 70) add('warn', '🌍', tx(`生在${ctry}`, `Born in ${ctry}`), tx(`${ctry}预期寿命约 ${le} 岁，医疗资源有限。干净饮水、疫苗、蚊帐与安全驾驶影响最大。`, `Life expectancy in ${ctry} is about ${le}. Clean water, vaccines, bed nets and road safety matter most.`), 0, false);
+
+    const gain = Math.min(20, items.filter(x => x.fix && x.yrs < 0).reduce((a, x) => a - x.yrs, 0) + (healthYears < 3 ? 3 : 0));
+    const diff = age - le;
+    let score = 60 + items.reduce((a, x) => a + (x.g === 'good' ? 6 : x.g === 'bad' ? -12 : -5), 0);
+    score = Math.max(5, Math.min(100, Math.round(score)));
+    const grade = score >= 80 ? tx('优秀', 'Excellent') : score >= 60 ? tx('良好', 'Good') : score >= 40 ? tx('一般', 'Fair') : tx('需要注意', 'Needs care');
+    // 健康曲线
+    let spark = '';
+    if (traj.length >= 2) {
+      const W = 300, Hh = 70, maxA = Math.max(...traj.map(p => p.age), 1);
+      const pts = traj.map(p => `${(p.age / maxA * (W - 10) + 5).toFixed(1)},${(Hh - 5 - Math.max(0, Math.min(100, p.health)) / 100 * (Hh - 10)).toFixed(1)}`).join(' ');
+      const low = traj.reduce((a, p) => p.health < a.health ? p : a, traj[0]);
+      spark = `<div class="fun-hr-chart"><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>
+        <div class="fun-hr-axis"><span>0</span><span>${tx('健康值的一生变化', 'Health over the life')} · ${tx('最低', 'lowest')} ${Math.round(low.health)}（${low.age} ${tx('岁', 'y')}）</span><span>${maxA}</span></div></div>`;
+    }
+    // 个人化建议：先列出这一生的问题，再补共通的长寿习惯
+    const recs = [];
+    if (life.smoker) recs.push(tx('戒烟：任何年纪戒都有用，戒烟门诊和尼古丁替代品能让成功率翻倍。', 'Quit smoking: it helps at any age; quit clinics and nicotine replacement double success.'));
+    if (life.conditions?.diabetes || life.conditions?.heart) recs.push(tx('慢性病：每 3–6 个月复诊，血压 < 130/80、糖化血色素 < 7%。', 'Chronic illness: check-ups every 3–6 months; blood pressure < 130/80, HbA1c < 7%.'));
+    if (soc < 40) recs.push(tx('每周至少和朋友或家人见面一次，加入一个兴趣团体。', 'See friends or family at least once a week; join a group you enjoy.'));
+    if (hap < 35) recs.push(tx('每天留 15 分钟给自己：散步、晒太阳、写下三件感恩的事。', 'Give yourself 15 minutes a day: a walk, some sun, three things you\'re grateful for.'));
+    if (healthYears < 3) recs.push(tx('每周快走 150 分钟，加上 2 次肌力训练；久坐每小时起来动 5 分钟。', 'Brisk walk 150 min a week plus 2 strength sessions; get up 5 minutes every hour.'));
+    const base = [
+      tx('吃得像地中海：多蔬果、全谷、豆类、鱼，少加工肉、少糖、少盐。', 'Eat Mediterranean-style: vegetables, whole grains, beans, fish; less processed meat, sugar and salt.'),
+      tx('每晚睡 7–9 小时。', 'Sleep 7–9 hours a night.'),
+      tx('少喝酒，最好不喝。', 'Drink little alcohol, ideally none.'),
+      tx('40 岁起每年量血压、血糖、血脂；按年龄做癌症筛检（大肠、乳房、子宫颈）。', 'From 40, check blood pressure, sugar and cholesterol yearly; do age-appropriate cancer screening.'),
+      tx('打疫苗：流感、肺炎链球菌、带状疱疹、HPV。', 'Get vaccinated: flu, pneumococcal, shingles, HPV.'),
+      tx('系安全带、骑车戴头盔，不酒驾。', 'Seat belts, helmets, never drink and drive.'),
+    ];
+    if (c.id === 'SGP') base.push(tx('新加坡居民可以参加 Healthier SG，免费做健康筛检。', 'Singapore residents can join Healthier SG for free health screening.'));
+    const allRecs = recs.concat(base).slice(0, 8);
+    const verdict = diff >= 5 ? tx(`比${ctry}的预期寿命多活了 ${diff} 年 🎉`, `${diff} years beyond ${ctry}'s life expectancy 🎉`)
+      : diff <= -5 ? tx(`比${ctry}的预期寿命少了 ${-diff} 年`, `${-diff} years short of ${ctry}'s life expectancy`)
+      : tx(`和${ctry}的预期寿命差不多`, `About ${ctry}'s life expectancy`);
+    return `<div class="fun-hr" id="funHealth">
+      <h3>🩺 ${tx('健康分析', 'Health report')}</h3>
+      <div class="fun-hr-top">
+        <div class="fun-hr-score ${score >= 60 ? "" : score >= 40 ? "mid" : "low"}"><b>${score}</b><small>${grade}</small></div>
+        <div><div>${tx('活到', 'Lived to')} <b>${age}</b> ${tx('岁', '')} · ${tx('预期', 'expected')} ${le} ${tx('岁', '')}</div><div class="muted">${verdict}</div>
+        ${gain > 0 ? `<div class="fun-hr-gain">⏳ ${tx(`改掉可改变的因素，这一生大约还能多活 ${gain} 年`, `Fixing the changeable factors could have added about ${gain} years`)}</div>` : `<div class="fun-hr-gain">🌿 ${tx('这一生的生活习惯已经很好了', 'This life already had healthy habits')}</div>`}</div>
+      </div>
+      ${spark}
+      <div class="fun-hr-items">${items.map(x => `<div class="fun-hr-it ${x.g}"><span class="fun-hr-ic">${x.icon}</span><div><b>${esc(x.title)}</b>${x.yrs ? ` <span class="fun-hr-y">${x.yrs > 0 ? '+' : '−'}${Math.abs(x.yrs)} ${tx('年', 'y')}</span>` : ''}<div>${esc(x.text)}</div></div></div>`).join('')}</div>
+      <h4>🌱 ${tx('更长寿的方法（给现实中的你）', 'How to live longer (for the real you)')}</h4>
+      <ol class="fun-hr-recs">${allRecs.map(r => `<li>${esc(r)}</li>`).join('')}</ol>
+      <p class="muted fun-cause-note">${tx('年数是依公开研究（WHO、柳叶刀等）的平均值粗估，用来比较轻重，不是医学诊断。', 'Year figures are rough averages from public research (WHO, The Lancet, etc.) for comparison only, not a diagnosis.')}</p>
+    </div>`;
+  }
   const _re5 = window.renderEnd;
   window.renderEnd = function () {
     _re5.apply(this, arguments);
     try {
       const life = STATE.life; if (!life || !life.died) return;
-      $('#funCause')?.remove();
+      $('#funCause')?.remove(); $('#funHealth')?.remove();
       const anchor = $('#endCauseAnalysis');
-      if (anchor) anchor.insertAdjacentHTML('beforebegin', causeCard(life));
+      if (anchor) anchor.insertAdjacentHTML('beforebegin', causeCard(life) + healthReport(life));
     } catch (e) { /* ignore */ }
   };
 
-  window.BornFun = { trackFor, causeCard, CAUSE_INFO, rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
+  window.BornFun = { trackFor, causeCard, healthReport, CAUSE_INFO, rarity, luck, todayChallenge, ACHV, CHALLENGES, sgEvent, toHans, achvModal, wechatModal, ethName, compareModal, track, ETH_LABEL: ethLabel, Audio, TRACKS, storyYear, dailyLine, CHAPTERS, get story() { return STORY; } };
 })();
