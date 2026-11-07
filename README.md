@@ -1,4 +1,4 @@
-# born-somewhere v6.34
+# born-somewhere v6.35
 
 172 國真實統計人生模擬遊戲。從 1in8b.life（原作 v0.7.68 beta）的功能完整移植並擴充，**融合了 zu-pu 的族譜模組**（GEDCOM 5.5.1 雙向互通）。
 

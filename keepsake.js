@@ -10,7 +10,7 @@
   'use strict';
   const $ = (s, r = document) => r.querySelector(s);
   const isZh = () => LANG === 'zh-Hans' || LANG === 'zh-Hant';
-  const tx = (zh, en) => (isZh() ? zh : en);
+  const tx = (zh, en) => (window.BornXL ? BornXL.t(zh, en) : (isZh() ? zh : en));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   // 资料层多为繁体；简体介面时，送进 canvas 以外（HTML 档、列印页）的文字要先转
   const H = (s) => (LANG === 'zh-Hans' && window.BornFun && BornFun.toHans) ? BornFun.toHans(String(s ?? '')) : String(s ?? '');
@@ -1454,7 +1454,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
   function memorialTab(body) {
     const life = current.life, key = life.regNumber || fileBase(life);
     const pub = loadPub()[key];
-    if (pub) return showPublished(body, key, pub);
+    if (pub && pub.id) return showPublished(body, key, pub);
     body.innerHTML = `<p>${tx('把这一生做成一个公开的追思页面，任何人打开连结都能看到，并为 TA 点一根蜡烛。', 'Turn this life into a public memorial page anyone can visit and light a candle for.')}</p>
       <div class="ks-pubbox">
         <div><b>✅ ${tx('会公开', 'Public')}</b><ul><li>${tx('游戏生成的人生纪录：名字、出生地、年份、家人、事件、抉择、死因', 'The game-generated record: name, birthplace, years, family, events, choices, cause')}</li><li>${tx('照片组合（九宫格）与未竟的心愿（用插画）', 'The photo set and the unfinished wish (illustrations)')}</li></ul></div>
@@ -1462,20 +1462,57 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
       </div>
       <label class="ks-own"><input type="checkbox" id="ksPubOk"> ${tx('我了解这个页面任何拿到连结的人都能看到，之后可以随时删除。', 'I understand anyone with the link can see this page, and I can delete it anytime.')}</label>
       <div class="ks-actions"><button class="primary" id="ksPub" type="button" disabled>🕯️ ${tx('发布到公开追思馆', 'Publish memorial')}</button></div>
-      <p class="muted" id="ksPubMsg"></p>`;
+      <p class="muted" id="ksPubMsg"></p>
+      ${autoToggle()}`;
+    wireAutoToggle(body);
     const ok = $('#ksPubOk'), btn = $('#ksPub'), msg = $('#ksPubMsg');
     ok.addEventListener('change', () => { btn.disabled = !ok.checked; });
     btn.addEventListener('click', async () => {
       btn.disabled = true; msg.textContent = tx('发布中⋯', 'Publishing…');
       try {
-        const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ life: publicLife(life) }) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(r.status === 429 ? tx('今天发布太多次了，明天再试', 'Too many today, try tomorrow') : (j.error || r.status));
-        const all = loadPub(); all[key] = { id: j.id, token: j.token, name: summary(life).name, created: Date.now() }; savePub(all);
+        const p = await postLife(life, key);
         track('memorial_publish', { country: life.country });
-        showPublished(body, key, all[key]);
+        showPublished(body, key, p);
       } catch (e) { msg.textContent = tx('发布失败：', 'Failed: ') + (e.message || e); btn.disabled = false; }
     });
+  }
+  async function postLife(life, key) {
+    const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ life: publicLife(life) }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.id) throw new Error(r.status === 429 ? tx('今天发布太多次了，明天再试', 'Too many today, try tomorrow') : (j.error || r.status));
+    const all = loadPub(); all[key] = { id: j.id, token: j.token, name: summary(life).name, created: Date.now() }; savePub(all);
+    pubCache = null;   // 「大家分享的人生」马上看得到
+    return all[key];
+  }
+
+  /* v6.35：人生结束就自动放进人生星光馆（预设开启，可在这里关掉）。
+     送出的内容跟手动发布一样：只有游戏生成的纪录，没有「我的照片」、没有玩家写下的文字。
+     玩家自己删掉的那段人生会记成 { off: true }，不会再自动发布。 */
+  const AUTO_KEY = 'born-somewhere-v2:auto-publish';
+  const autoOn = () => { try { return localStorage.getItem(AUTO_KEY) !== '0'; } catch (e) { return true; } };
+  const setAuto = (v) => { try { localStorage.setItem(AUTO_KEY, v ? '1' : '0'); } catch (e) { /* ignore */ } };
+  const autoTried = new Set();
+  function autoToggle() {
+    return `<label class="ks-own ks-auto"><input type="checkbox" data-ks-auto ${autoOn() ? 'checked' : ''}> ${tx('以后每段人生结束时，自动放进人生星光馆', 'Automatically add every finished life to the memorial hall')}</label>`;
+  }
+  function wireAutoToggle(root) {
+    root.querySelector('[data-ks-auto]')?.addEventListener('change', (e) => {
+      setAuto(e.target.checked);
+      track('memorial_auto_toggle', { on: e.target.checked ? 1 : 0 });
+      toast(e.target.checked ? tx('已开启自动发布', 'Auto-publish on') : tx('已关闭自动发布，之后要手动发布', 'Auto-publish off'));
+    });
+  }
+  async function autoPublish(life) {
+    if (!life || !life.died || !autoOn() || !navigator.onLine) return;
+    if (/[?&]m=/.test(location.search)) return;
+    const key = life.regNumber || fileBase(life);
+    if (!key || autoTried.has(key) || loadPub()[key]) return;
+    autoTried.add(key);
+    try {
+      await postLife(life, key);
+      track('memorial_auto', { country: life.country, age: life.deathAge });
+      toast(`🌟 ${tx('这段人生已放进人生星光馆（纪念品 → 星光馆可删除或关闭自动发布）', 'This life is now in the memorial hall (Keepsakes → Public memorial to delete it or turn this off)')}`, 3200);
+    } catch (e) { /* 离线、额度用完：安静失败，玩家还能手动发布 */ }
   }
   function showPublished(body, key, pub) {
     const url = memUrl(pub.id);
@@ -1486,7 +1523,9 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
         ${navigator.share ? `<button class="ghost" id="ksPubShare" type="button">💚 ${tx('分享', 'Share')}</button>` : ''}
         <button class="ghost" id="ksPubDel" type="button">🗑️ ${tx('删除公开页', 'Delete page')}</button></div>
       </div></div>
+      ${autoToggle()}
       <p class="muted">${tx('删除用的凭证只存在这个浏览器里；清除浏览资料后就无法自己删除，可来信 info@zenmatrix.org 处理。', 'The delete key lives only in this browser. If you clear it, email info@zenmatrix.org.')}</p>`;
+    wireAutoToggle(body);
     const qc = $('#ksPubQr'); if (qc) qr(qc.getContext('2d'), url, 0, 0, 180);
     const text = tx(`我在《模拟人生》里走完了一生，为 TA 留了一个追思页。来点一根蜡烛吧 🕯️ ${url}`, `I lived a whole life in Life Simulator. Light a candle for it 🕯️ ${url}`).replace(/TA/, current.life.sex === 'F' ? '她' : '他');
     $('#ksPubCopy').addEventListener('click', async () => { const ok = await copyText(H(text)); toast(ok ? tx('连结已复制', 'Link copied') : tx('复制失败', 'Copy failed')); });
@@ -1496,7 +1535,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
       try {
         const r = await fetch(`${API}/${pub.id}`, { method: 'DELETE', headers: { 'x-owner-token': pub.token } });
         if (!r.ok && r.status !== 404) throw new Error(r.status);
-        const all = loadPub(); delete all[key]; savePub(all);
+        const all = loadPub(); all[key] = { off: true }; savePub(all); pubCache = null;
         track('memorial_delete', {});
         toast(tx('已删除', 'Deleted')); memorialTab(body);
       } catch (e) { toast(tx('删除失败，请稍后再试', 'Delete failed')); }
@@ -1590,7 +1629,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
     box.className = 'shared-public';
     box.id = 'sharedPublic';
     if (!items.length) {
-      box.innerHTML = `<p class="shared-public-empty">🕯️ ${tx('还没有其他玩家公开人生。一段人生结束后，在「纪念品 → 公开追思」发布，就会出现在这里。', 'No one has shared a life publicly yet. When a life ends, publish it from Keepsakes → Public memorial and it will appear here.')}</p>`;
+      box.innerHTML = `<p class="shared-public-empty">🕯️ ${tx('还没有其他玩家公开人生。人生结束后会自动出现在这里。', 'No one has shared a life publicly yet. Finished lives appear here automatically.')}</p>`;
       return box;
     }
     box.innerHTML = `<div class="shared-sec">🕯️ ${tx('公开追思', 'Public memorials')} · ${items.length}</div>` + items.map(x => {
@@ -1630,6 +1669,7 @@ ${quotes.length ? `<h2>✎ ${tx('写下的话', 'Words you wrote')}</h2><ul>${qu
   const _renderEnd = window.renderEnd;
   window.renderEnd = function () {
     _renderEnd.apply(this, arguments);
+    try { if (STATE.life && STATE.life.died) autoPublish(STATE.life); } catch (e) { /* ignore */ }
     try {
       const host = $('#funEndPanel') || $('#view-end');
       if (!host || !STATE.life || !STATE.life.died) return;

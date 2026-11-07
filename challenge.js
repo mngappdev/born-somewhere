@@ -12,7 +12,7 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const isZh = () => typeof LANG === 'undefined' || /^zh/.test(LANG);
-  const tx = (zh, en) => (isZh() ? zh : en);
+  const tx = (zh, en) => (window.BornXL ? BornXL.t(zh, en) : (isZh() ? zh : en));
   const H = (s) => (typeof LANG !== 'undefined' && LANG === 'zh-Hans' && window.BornFun && BornFun.toHans) ? BornFun.toHans(String(s ?? '')) : String(s ?? '');
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const track = (n, p) => { try { window.BornFun?.track?.(n, p); } catch (e) { /* ignore */ } };
@@ -201,7 +201,7 @@
 
   /* ---------- 发出挑战：分享卡 + 连结 ---------- */
   function wrapText(ctx, text, x, y, maxW, lh) {
-    const chars = /[㐀-鿿]/.test(text) ? [...text] : text.split(/(\s+)/);
+    const chars = window.BornXL ? BornXL.segs(text) : (/[㐀-鿿]/.test(text) ? [...text] : text.split(/(\s+)/));
     let line = '';
     for (const ch of chars) {
       const t = line + ch;

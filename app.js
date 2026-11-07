@@ -26,7 +26,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.34.0';
+const APP_VERSION = '6.35.0';
 const APP_BUILD = '2026-11-07';
 
 const STATE = {
@@ -959,12 +959,30 @@ function syncDetailToggleLabel() {
 
 // ==== 國家 ====
 function countryById(id) { return COUNTRIES.find(c => c.id === id) || null; }
+/* v6.35：中文、英文以外的语言，国名用浏览器的 Intl.DisplayNames（ISO 两码取自国旗 emoji），
+   没有就退回英文——以前日、泰、越、法、西文看到的是中文国名 */
+const _regionNames = {};
+function intlCountryName(c) {
+  try {
+    const cps = [...(c.flag || '')].map(ch => ch.codePointAt(0) - 0x1F1E6);
+    if (cps.length !== 2 || cps.some(n => n < 0 || n > 25)) return null;
+    const iso2 = String.fromCharCode(65 + cps[0], 65 + cps[1]);
+    if (!_regionNames[LANG]) _regionNames[LANG] = new Intl.DisplayNames([LANG], { type: 'region' });
+    const n = _regionNames[LANG].of(iso2);
+    return n && n !== iso2 ? n : null;
+  } catch (e) { return null; }
+}
 function localize(c) {
   if (!c) return null;
+  const zh = LANG === 'zh-Hans' || LANG === 'zh-Hant';
+  const name = LANG === 'en' ? c.name_en
+    : LANG === 'zh-Hans' ? (c.name_zh_cn || c.name_zh)
+    : LANG === 'zh-Hant' ? c.name_zh
+    : (LANG === 'ko' && c.name_ko) || intlCountryName(c) || c.name_en;
   return {
     ...c,
-    name: LANG === 'en' ? c.name_en : (LANG === 'zh-Hans' ? (c.name_zh_cn || c.name_zh) : c.name_zh),
-    region_name: LANG === 'en' ? c.region_en : c.region_zh,
+    name,
+    region_name: zh ? c.region_zh : c.region_en,
   };
 }
 

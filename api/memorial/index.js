@@ -18,7 +18,7 @@ const crypto = require('crypto');
 const BASE = process.env.MEM_SAS_URL || '';
 const ADMIN = process.env.ADMIN_KEY || '';
 const SALT = process.env.IP_SALT || 'salt';
-const MAX_PER_DAY = 12;
+const MAX_PER_DAY = 40;   // v6.35：人生结束会自动发布，额度从 12 提高
 
 const blobUrl = (p) => BASE.replace('?', '/' + p + '?');
 async function getBlob(p) {

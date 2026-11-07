@@ -12,7 +12,7 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const isZh = () => typeof LANG === 'undefined' || /^zh/.test(LANG);
-  const tx = (zh, en) => (isZh() ? zh : en);
+  const tx = (zh, en) => (window.BornXL ? BornXL.t(zh, en) : (isZh() ? zh : en));
   const H = (s) => (typeof LANG !== 'undefined' && LANG === 'zh-Hans' && window.BornFun && BornFun.toHans) ? BornFun.toHans(String(s ?? '')) : String(s ?? '');
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const track = (n, p) => { try { window.BornFun?.track?.(n, p); } catch (e) { /* ignore */ } };
@@ -142,7 +142,7 @@
     const top = ['SGP', 'CHN', 'MYS', 'TWN', 'HKG', 'USA', 'IND', 'IDN', 'JPN', 'KOR', 'GBR', 'AUS'];
     const nm = (c) => `${c.flag} ${esc(localize(c).name)}`;
     const topHtml = top.map(countryById).filter(Boolean).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${nm(c)}</option>`).join('');
-    const rest = list.filter(c => !top.includes(c.id)).sort((a, b) => localize(a).name.localeCompare(localize(b).name, isZh() ? 'zh' : 'en'))
+    const rest = list.filter(c => !top.includes(c.id)).sort((a, b) => localize(a).name.localeCompare(localize(b).name, typeof LANG === 'undefined' ? 'zh' : LANG))
       .map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${nm(c)}</option>`).join('');
     return topHtml + `<option disabled>──────</option>` + rest;
   }
@@ -186,7 +186,7 @@
     const base = cohortExpect(c, st.sex, st.year, age);
     return { c, name, age, w, pIncome, pLe, pU5, days, beats, base };
   }
-  const yi = (n) => isZh() ? (n >= 1e8 ? `${(n / 1e8).toFixed(1)}亿` : `${Math.round(n / 1e4).toLocaleString()}万`) : (n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion` : `${(n / 1e6).toFixed(0)} million`);
+  const yi = (n) => window.BornXL ? BornXL.big(n) : (isZh() ? (n >= 1e8 ? `${(n / 1e8).toFixed(1)}亿` : `${Math.round(n / 1e4).toLocaleString()}万`) : (n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion` : `${(n / 1e6).toFixed(0)} million`));
   function stepWorld() {
     const f = worldFacts(), m = modal();
     const luckier = Math.max(f.pIncome, 1);
@@ -264,7 +264,7 @@
 
   /* ---------- 分享卡 ---------- */
   function wrapText(ctx, text, x, y, maxW, lh) {
-    const chars = /[㐀-鿿]/.test(text) ? [...text] : text.split(/(\s+)/);
+    const chars = window.BornXL ? BornXL.segs(text) : (/[㐀-鿿]/.test(text) ? [...text] : text.split(/(\s+)/));
     let line = '';
     for (const ch of chars) {
       const t = line + ch;

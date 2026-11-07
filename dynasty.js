@@ -11,7 +11,7 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const isZh = () => typeof LANG === 'undefined' || /^zh/.test(LANG);
-  const tx = (zh, en) => (isZh() ? zh : en);
+  const tx = (zh, en) => (window.BornXL ? BornXL.t(zh, en) : (isZh() ? zh : en));
   const H = (s) => (typeof LANG !== 'undefined' && LANG === 'zh-Hans' && window.BornFun && BornFun.toHans) ? BornFun.toHans(String(s ?? '')) : String(s ?? '');
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const track = (n, p) => { try { window.BornFun?.track?.(n, p); } catch (e) { /* ignore */ } };
@@ -168,7 +168,7 @@
       const heirs = kids.length;
       const share = Math.max(0, Math.round((life.stats?.netAssets || 0) * 0.85 / heirs));
       html += `<div class="dy-next"><b>👨‍👩‍👧 ${tx('家族传承：成为下一代', 'Family legacy: live the next generation')}</b>
-        <p>${tx(`成为你的孩子，继续这个家族的故事（第 ${gen + 1} 代）。${share > 0 ? `你走完一生那年，每个孩子会继承约 ${money(share)}。` : ''}`, `Be born as one of your children and continue the family story (generation ${gen + 1}).${share > 0 ? ` Each child inherits about ${money(share)} when you pass away.` : ''}`)}</p>
+        <p>${tx(`成为你的孩子，继续这个家族的故事（第 ${gen + 1} 代）。`, `Be born as one of your children and continue the family story (generation ${gen + 1}).`)}${share > 0 ? tx(`你走完一生那年，每个孩子会继承约 ${money(share)}。`, ` Each child inherits about ${money(share)} when you pass away.`) : ''}</p>
         <div class="dy-kids">${kids.map(k => `<button class="primary" data-dy-kid="${esc(k.id)}" type="button">${k.sex === 'M' ? '👦' : '👧'} ${tx('成为', 'Be')} ${esc(k.name)} <small>${k.sex === 'M' ? tx('儿子', 'son') : tx('女儿', 'daughter')} · ${k.birth?.year || ''}</small></button>`).join('')}</div></div>`;
     } else if (d && d.gens.length >= 2) {
       html += `<p class="muted dy-end">🌙 ${tx(`这一代没有留下孩子，家族的故事在第 ${gen} 代画下句点。`, `No children this time — the family story ends at generation ${gen}.`)}</p>`;
