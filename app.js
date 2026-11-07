@@ -7,6 +7,9 @@
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 const STORAGE_KEY = 'born-somewhere-v2';
+// v6.15：「現在」出生用裝置的當下年月（原作 1in8billion.live v1.13 的實時年月出生）；過去／未來仍為 1990／2080
+const NOW_DATE = new Date();
+const NOW_YEAR = NOW_DATE.getFullYear();
 
 let COUNTRIES = [];
 let I18N = {};
@@ -23,14 +26,15 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.12.0';
-const APP_BUILD = '2026-10-23';
+const APP_VERSION = '6.35.0';
+const APP_BUILD = '2026-11-07';
 
 const STATE = {
   view: 'intro',
   era: 'now',          // 'now' | 'past' | 'future'
   birthMode: 'baby',   // 'baby' | 'all' (此刻出生 vs 80億人活口)
   selectedCountry: null,
+  birthPick: (function(){ try { return localStorage.getItem('born-somewhere-v2:birthPick') || 'SGP'; } catch(e) { return 'SGP'; } })(), // v6.13
   life: null,
   paused: false,
   speed: 1,
@@ -920,6 +924,10 @@ async function loadData() {
   LANG = localStorage.getItem(STORAGE_KEY + ':lang') || detectLang();
 }
 function detectLang() {
+  // v6.13：預設簡體中文（使用者手動切換後以 localStorage 為準）
+  return 'zh-Hans';
+}
+function detectLangFromBrowser() {
   const nav = (navigator.language || 'en').toLowerCase();
   if (nav.startsWith('zh')) return nav.includes('hans') ? 'zh-Hans' : 'zh-Hant';
   if (nav.startsWith('en')) return 'en';
@@ -951,16 +959,42 @@ function syncDetailToggleLabel() {
 
 // ==== 國家 ====
 function countryById(id) { return COUNTRIES.find(c => c.id === id) || null; }
+/* v6.35：中文、英文以外的语言，国名用浏览器的 Intl.DisplayNames（ISO 两码取自国旗 emoji），
+   没有就退回英文——以前日、泰、越、法、西文看到的是中文国名 */
+const _regionNames = {};
+function intlCountryName(c) {
+  try {
+    const cps = [...(c.flag || '')].map(ch => ch.codePointAt(0) - 0x1F1E6);
+    if (cps.length !== 2 || cps.some(n => n < 0 || n > 25)) return null;
+    const iso2 = String.fromCharCode(65 + cps[0], 65 + cps[1]);
+    if (!_regionNames[LANG]) _regionNames[LANG] = new Intl.DisplayNames([LANG], { type: 'region' });
+    const n = _regionNames[LANG].of(iso2);
+    return n && n !== iso2 ? n : null;
+  } catch (e) { return null; }
+}
 function localize(c) {
   if (!c) return null;
+  const zh = LANG === 'zh-Hans' || LANG === 'zh-Hant';
+  const name = LANG === 'en' ? c.name_en
+    : LANG === 'zh-Hans' ? (c.name_zh_cn || c.name_zh)
+    : LANG === 'zh-Hant' ? c.name_zh
+    : (LANG === 'ko' && c.name_ko) || intlCountryName(c) || c.name_en;
   return {
     ...c,
-    name: LANG === 'en' ? c.name_en : (LANG === 'zh-Hans' ? (c.name_zh_cn || c.name_zh) : c.name_zh),
-    region_name: LANG === 'en' ? c.region_en : c.region_zh,
+    name,
+    region_name: zh ? c.region_zh : c.region_en,
   };
 }
 
 // ==== 出生選擇 ====
+/* v6.13：主要「出生」按鈕的出生地 —— 預設新加坡；切到「隨機」才依人口比例抽 */
+function pickBirthCountry() {
+  if (STATE.birthPick && STATE.birthPick !== 'random') {
+    const c = countryById(STATE.birthPick);
+    if (c) return c;
+  }
+  return chooseCountry(STATE.birthMode);
+}
 function chooseCountry(mode) {
   // mode:
   //   'baby' 依嬰兒出生人數權重（c.births — 每國每年新生兒數）
@@ -1121,11 +1155,29 @@ function updateRealtimeCounters() {
 }
 
 // ==== 生命表 (Gompertz) ====
+// v6.22：世代壽命加成。
+// c.le 是「時期」預期壽命：假設嬰兒一輩子都活在今天的死亡率之下。
+// 但今天出生的人會一路受惠於醫療與生活條件的進步，實際活得更久
+// （英國 ONS：2021 年出生世代的預期壽命比時期值高約 7–8 歲）。
+// 所以依出生年代加上世代加成；華人（含中國、台灣、香港、澳門出生者）再多 2 歲，
+// 這一項是遊戲性調整（華人對「早逝」比較忌諱），不是統計數字。上限 95 歲。
+const CHINESE_REGIONS = ['CHN', 'TWN', 'HKG', 'MAC'];
+function longevityBonus(c, life) {
+  const L = life || STATE.life;
+  const year = (L && L.countryData && L.countryData.id === c.id && L.year) ? L.year
+    : (STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : NOW_YEAR);
+  let b = year >= 2060 ? 8 : year >= 2000 ? 6 : year >= 1980 ? 4 : 2;
+  const eth = L && L.countryData && L.countryData.id === c.id ? L.ethnicity : null;
+  if (eth === 'chinese' || (!eth && CHINESE_REGIONS.includes(c.id))) b += 2;
+  return Math.max(0, Math.min(b, 95 - (c.le || 70)));
+}
+function effectiveLe(c, life) { return Math.round(((c.le || 70) + longevityBonus(c, life)) * 10) / 10; }
 const LT_CACHE = {};
-function lifeTable(c, sex) {
-  const key = c.id + sex + (c.yr || '');
+function lifeTable(c, sex, life) {
+  const le = effectiveLe(c, life);
+  const key = c.id + sex + (c.yr || '') + '|' + le;
   if (LT_CACHE[key]) return LT_CACHE[key];
-  const e0 = sex === 'F' ? c.le + (c.gap || 4) * 0.49 : c.le - (c.gap || 4) * 0.51;
+  const e0 = sex === 'F' ? le + (c.gap || 4) * 0.49 : le - (c.gap || 4) * 0.51;
   const k = sex === 'F' ? 0.92 : 1.08;
   const q0 = Math.min(0.25, (c.im || 15) / 1000 * k);
   const u5 = Math.min(0.35, Math.max(q0 + 0.0005, (c.u5 || 10) / 1000 * k));
@@ -1173,9 +1225,9 @@ function lifeTable(c, sex) {
   return LT_CACHE[key];
 }
 
-function pDie(age, c, sex) {
+function pDie(age, c, sex, life) {
   if (age < 0) return 0;
-  const lt = lifeTable(c, sex);
+  const lt = lifeTable(c, sex, life);
   if (age >= 110) return 1;
   if (age === 0) return lt.q[0];
   if (lt.l[age] === 0) return 1;
@@ -1352,7 +1404,8 @@ function pickIndianCaste() {
 function newLife(countryCode) {
   const c = countryById(countryCode);
   if (!c) return null;
-  const sex = Math.random() < 0.5 ? 'M' : 'F';
+  // v6.14：可在首頁指定性別（STATE.forceSex 由 fun.js 設定；未指定則 50/50）
+  const sex = (STATE.forceSex === 'M' || STATE.forceSex === 'F') ? STATE.forceSex : (Math.random() < 0.5 ? 'M' : 'F');
   const name = randomName(c, sex);
   // 1in8b.life 風格：出生登記背景
   const fam = generateFamily(countryCode, sex);
@@ -1364,7 +1417,8 @@ function newLife(countryCode) {
     name,
     sex,
     age: 0,
-    year: STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : 2024,
+    year: STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : NOW_YEAR,
+    birthMonth: (STATE.era === 'past' || STATE.era === 'future') ? null : NOW_DATE.getMonth() + 1,   // v6.15
     yearOffset: 0,
     // 個人條件
     smoker: chance(c.sm / 100 * 0.5),
@@ -1401,7 +1455,7 @@ function newLife(countryCode) {
     // 同伴（v5.8 新增）：4 個同時出生的隨機人物
     companions: generateCompanions(countryCode, 4),
     // 1in8b.life 風格：出生登記編號
-    regNumber: `${countryCode}-${(STATE.era==='past'?'1990':STATE.era==='future'?'2080':'2024')}-${Math.floor(Math.random()*9000000)+1000000}`,
+    regNumber: `${countryCode}-${(STATE.era==='past'?'1990':STATE.era==='future'?'2080':String(NOW_YEAR))}-${Math.floor(Math.random()*9000000)+1000000}`,
     // 死亡
     died: false,
     cause: null,
@@ -1568,7 +1622,7 @@ function quartileLabel(q, isEn) {
 function generateFamily(countryCode, selfSex, fc) {
   const c = countryById(countryCode);
   if (!c) return { parents: [], siblings: [], grandparents: [], partner: null, kids: [] };
-  const baseYear = (STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : 2024);
+  const baseYear = (STATE.era === 'past' ? 1990 : STATE.era === 'future' ? 2080 : NOW_YEAR);
   const war = c.war || 0;
   // 戰區孤兒機率：war 高 → 雙親存在率低
   const parentChance = Math.max(0.35, 1 - war * 0.4);
@@ -1764,7 +1818,9 @@ function milestoneEvents(life, newAge) {
   }
   // 戰爭/衝突（教學版過濾掉）
   // v5.62：每種戰爭事件一生只出現一次，全部用完就不再抽
-  const warEvt = life.countryData?.wh || 0;
+  // v6.18：原本讀的是 wh（世界幸福指數 0–10），172 國裡 156 國都 > 0.1，新加坡每年約 65% 機率出現空襲／徵兵。
+  // 戰亂強度在 war 欄位（烏克蘭 2、敘利亞 1、阿富汗 0.3、新加坡 0）。
+  const warEvt = life.countryData?.war || 0;
   if (!STATE.eduMode && !STATE.softMode && warEvt > 0.1 && newAge >= 1) {
     const pool = [
       LANG === 'en' ? 'Air raid sirens. The family shelters in the basement.' : '空襲警報響起，全家躲進防空洞。',
@@ -1878,7 +1934,10 @@ function submitFeedback() {
 
 function startLife(countryCode) {
   stopTicker();
-  STATE.life = newLife(countryCode);
+  // v6.14：出生卡預覽的那個人就是接下來要活的人（舊碼會再 newLife 一次，卡上的姓名／性別／父母和實際人生對不上）
+  const certLife = STATE._certLife;
+  STATE._certLife = null;
+  STATE.life = (certLife && certLife.country === countryCode) ? certLife : newLife(countryCode);
   if (!STATE.life) return;
   STATE.life.log.push({ age: 0, kind: 'birth', icon: '👶', text: t('event.birth', '') });
   logLife(t('log.born_in', localize(STATE.life.countryData).name, ''));
@@ -2003,7 +2062,7 @@ function tick() {
   // v5.13：年度焦點選擇（每年 6+ 歲自動彈出，除非autoDecide）→ 已改為手動
   // 達到當地平均壽命 1.3x 自動死亡
   // v5.33：壽命上限放寬（從 1.35x 改為 1.8x，1in8b.life 實測 98-101 歲）
-  const maxAge = c.le * 1.8;
+  const maxAge = effectiveLe(c) * 1.8;
   if (STATE.life.age > maxAge) dieNow('自然衰老');
   // v5.20：每 5 年套用投資收益
   if (STATE.life.age % 5 === 0 && STATE.life.age > 0) applyInvestmentReturn();
@@ -2501,7 +2560,7 @@ function generateYearlyEvent(life) {
     events.push({ weight: 8, icon: '🕯️', en: 'Kept an old photo on the shelf', zh: '把舊照片擺在架上', rep: true });
   }
   // 加國家特殊事件
-  if (c.wh > 0.5 && Math.random() < c.wh * 0.1) {
+  if ((c.war || 0) > 0.1 && Math.random() < (c.war || 0) * 0.15) {   // v6.18：同上，原本誤用 wh
     events.push({ weight: 20, icon: '⚔️', en: 'Affected by local unrest', zh: '受到當地動亂影響' });
   }
   // v5.62：抽權重前先濾掉「一生只該發生一次」而且已經發生過的事件，
@@ -2663,6 +2722,7 @@ function savePastLife(life) {
       name: life.name.full || life.name.full_en || '',
       age: life.deathAge || life.age,
       cause: life.cause,
+      sex: life.sex,               // v6.26：「大家分享的人生」等處讀頂層 sex；以前沒存，一律顯示成「女」
       full,                        // 完整人生；舊紀錄沒有這個欄位
     };
     arr.unshift(rec);
@@ -2679,7 +2739,10 @@ function savePastLife(life) {
 }
 function loadPastLives() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY + ':past') || '[]');
+    const arr = JSON.parse(localStorage.getItem(STORAGE_KEY + ':past') || '[]');
+    // v6.26：舊紀錄的頂層沒有 sex，從完整人生補回來（否則男性一律顯示成「女」）
+    for (const p of arr) if (p && !p.sex && p.full && p.full.sex) p.sex = p.full.sex;
+    return arr;
   } catch (e) { return []; }
 }
 
@@ -2751,8 +2814,8 @@ function renderAll() {
 function renderIntro() {
   // 國家預設
   if (!STATE.selectedCountry) {
-    // 預設第一個
-    STATE.selectedCountry = 'TWN';
+    // v6.13：預設新加坡
+    STATE.selectedCountry = 'SGP';
   }
   const sel = $('#countrySelect');
   if (sel && sel.children.length !== COUNTRIES.length) {
@@ -2910,7 +2973,7 @@ function buildBirthCertCard(c, life) {
       <div class="bc-iso">${c.id}</div>
     </div>
     <div class="bc-reg">${t('intro.bc.regNo')}：<b>${escapeHtml(life.regNumber || (c.id + '-' + yr + '-0000000'))}</b></div>
-    <div class="bc-reg">${t('intro.bc.dob')}：<b>${yr}-01-01</b></div>
+    <div class="bc-reg">${t('intro.bc.dob')}：<b>${yr}-${String(life.birthMonth || 1).padStart(2, '0')}${life.birthMonth ? '' : '-01'}</b></div>
     <table class="bc-table">
       <tbody>
         <tr><td class="bc-k">${t('intro.bc.name')}</td><td class="bc-v">${escapeHtml(life.name.full || life.name.full_en || '—')}</td></tr>
@@ -2922,7 +2985,7 @@ function buildBirthCertCard(c, life) {
         <tr><td class="bc-k">${t('intro.bc.mother')}</td><td class="bc-v">${mother ? escapeHtml(mother.name) : '—'}${md.age ? ` · ${md.age} ${t('unit.years')}` : ''}${md.job ? ` · ${escapeHtml(md.job)}` : ''}</td></tr>
         <tr><td class="bc-k">${t('intro.bc.housing')}</td><td class="bc-v">${escapeHtml(housing)}</td></tr>
         <tr><td class="bc-k">${t('intro.bc.religion')}</td><td class="bc-v">${escapeHtml(life.stats.religion || '—')}</td></tr>
-        <tr class="bc-stat"><td class="bc-k">${t('intro.bc.le')}</td><td class="bc-v">${c.le.toFixed(1)} ${t('unit.years')}</td></tr>
+        <tr class="bc-stat"><td class="bc-k">${t('intro.bc.le')}</td><td class="bc-v">${effectiveLe(c, life).toFixed(1)} ${t('unit.years')}</td></tr>
         <tr class="bc-stat"><td class="bc-k">${t('intro.bc.u5')}</td><td class="bc-v">${u5pct < 0.1 ? u5pct.toFixed(2) : u5pct.toFixed(1)}%</td></tr>
         <tr class="bc-stat"><td class="bc-k">${t('intro.bc.ppp')}</td><td class="bc-v">$${(c.ppp || 0).toLocaleString()}</td></tr>
       </tbody>
@@ -2938,6 +3001,7 @@ function showBirthCertModal(c) {
   const life = newLife(c.id);
   if (!life) return;
   STATE.birthCertCountry = c;
+  STATE.birthCertLife = life;   // v6.14
   const body = $('#birthCertBody');
   if (body) body.innerHTML = buildBirthCertCard(c, life);
   modal.removeAttribute('hidden');
@@ -2952,7 +3016,7 @@ function hideBirthCertModal() {
 
 /* v5.19：點「出 生」按鈕 — 隨機抽國家、顯示出生卡、確認後才開始 */
 function startLifeWithCert() {
-  const c = chooseCountry(STATE.birthMode);
+  const c = pickBirthCountry();
   if (!c) return;
   // 顯示出生卡 modal，等使用者按「開始人生」才正式 startLife
   showBirthCertModal(c);
@@ -2972,7 +3036,7 @@ function renderLife() {
   const ageEl = $('#lifeAge');
   if (ageEl) ageEl.innerHTML = (STATE.life.age || 0) + '<small>' + t('unit.years') + '</small>';
   $('#lifeName2').textContent = (STATE.life.name.full || STATE.life.name.full_en) || '...';
-  $('#lifeLe').textContent = c.le;
+  $('#lifeLe').textContent = effectiveLe(c);
   $('#lifeSex').textContent = STATE.life.sex === 'M' ? t('sex.male') : t('sex.female');
   // 教育：顯示 0-4 級距 + 已就讀年數
   const educLabels = ['—', t('edu.0')+'（'+t('edu.pre')+'）', t('edu.1'), t('edu.2'), t('edu.3'), t('edu.4')];
@@ -2997,7 +3061,7 @@ function renderLife() {
     $('#lifeKids').textContent = '0';
   }
   // v5.37：進度條（4px scaleX，位於 sticky topbar 內）
-  const pct = Math.min(100, STATE.life.age / c.le * 100);
+  const pct = Math.min(100, STATE.life.age / effectiveLe(c) * 100);
   const bar = $('#lifeBar');
   if (bar) bar.style.transform = `scaleX(${(pct / 100).toFixed(4)})`;
   // 角色簡介
@@ -3631,7 +3695,7 @@ function renderEnd() {
   $('#endCause').textContent = causeLabel(life.cause);
   $('#endName').textContent = life.name.full || life.name.full_en || '—';
   $('#endPortrait').innerHTML = pixelPortraitSVG(life.countryData, life.age, life.sex);
-  $('#endLe').textContent = t('end.lifespan_le', { age: life.deathAge, le: c.le });
+  $('#endLe').textContent = t('end.lifespan_le', { age: life.deathAge, le: effectiveLe(c, life) });
   const past = loadPastLives();
   $('#endPastCount').textContent = past.length;
   // 證書（guilloche）
@@ -4848,7 +4912,7 @@ function runLab(countryCode, era, sexMode, N) {
     while (!life.died && life.age < 120) {
       life.age += 1;
       life.yearOffset += 1;
-      if (Math.random() < pDie(life.age, life.countryData, sex)) {
+      if (Math.random() < pDie(life.age, life.countryData, sex, life)) {
         life.died = true;
         life.deathAge = life.age;
         const cause = pickCause(life.countryData, life.age, sex);
@@ -5104,8 +5168,9 @@ function wire() {
   const birthCertConfirm = $('#birthCertConfirm');
   if (birthCertConfirm) birthCertConfirm.addEventListener('click', () => {
     const c = STATE.birthCertCountry;
+    const certLife = STATE.birthCertLife;
     hideBirthCertModal();
-    if (c) startLife(c.id);
+    if (c) { STATE._certLife = certLife; startLife(c.id); }
   });
   // v5.19：出生卡 modal 的取消按鈕
   const birthCertCancel = $('#birthCertCancel');
@@ -5154,7 +5219,7 @@ function wire() {
   });
   // v5.22：貨幣切換 + 主題切換
   const currencyBtn = $('#currencyToggle');
-  const currencies = ['NT$', 'HK$', 'MOP$', 'CNY', 'US$'];
+  const currencies = ['S$', 'NT$', 'HK$', 'MOP$', 'CNY', 'US$'];
   if (currencyBtn) currencyBtn.addEventListener('click', () => {
     const i = currencies.indexOf(STATE.life?.currency || 'NT$');
     const next = currencies[(i + 1) % currencies.length];
@@ -5204,10 +5269,10 @@ function wire() {
   if (dieBtn) dieBtn.addEventListener('click', () => { if (STATE.life && !STATE.life.died) dieNow('自行結束'); });
   const rebirthBtn = $('#btnRebirth');
   if (rebirthBtn) rebirthBtn.addEventListener('click', () => {
-    const c = chooseCountry(STATE.birthMode);
+    const c = pickBirthCountry();
     if (c) {
       stopTicker();
-      toast(LANG==='en' ? `Reborn in ${c.flag} ${c.name_zh}` : `在 ${c.flag} ${c.name_zh} 重新出生`);
+      toast(LANG==='en' ? `Reborn in ${c.flag} ${c.name_en}` : `在 ${c.flag} ${localize(c).name} 重新出生`);
       startLife(c.id);
     }
   });
@@ -5222,7 +5287,7 @@ function wire() {
   if (restart) restart.addEventListener('click', () => setView('intro'));
   const newLife = $('#btnNewLife');
   if (newLife) newLife.addEventListener('click', () => {
-    const c = chooseCountry(STATE.birthMode);
+    const c = pickBirthCountry();
     if (c) startLife(c.id);
   });
   const downloadCert = $('#btnDownloadCert');
@@ -5411,8 +5476,8 @@ function setCurrency(cur) {
   if (!STATE.life) return;
   STATE.life.currency = cur;
   const s = STATE.life.stats;
-  const rateMap = { 'NT$': 30, 'HK$': 7.8, 'MOP$': 8.05, 'CNY': 7.2, 'US$': 1 };
-  const rates = { 'NT$': '🇹🇼 NT$', 'HK$': '🇭🇰 HK$', 'MOP$': '🇲🇴 MOP$', 'CNY': '🇨🇳 CNY', 'US$': '🇺🇸 US$' };
+  const rateMap = { 'S$': 1.35, 'NT$': 30, 'HK$': 7.8, 'MOP$': 8.05, 'CNY': 7.2, 'US$': 1 };
+  const rates = { 'S$': '🇸🇬 S$', 'NT$': '🇹🇼 NT$', 'HK$': '🇭🇰 HK$', 'MOP$': '🇲🇴 MOP$', 'CNY': '🇨🇳 CNY', 'US$': '🇺🇸 US$' };
   if (!rateMap[cur]) return;
   const na = $('#netAssets');
   if (na) na.textContent = rates[cur] + Math.round((s.netAssets || 0) * rateMap[cur]).toLocaleString();
@@ -5622,7 +5687,8 @@ async function init() {
   if (location.hash === '#privacy') setTimeout(renderPrivacyModal, 200);
   if (location.hash === '#terms') setTimeout(renderTermsModal, 200);
 }
-init();
+// v6.13：等所有 script（含 fun.js）都執行完再啟動，掛鉤才保證生效
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
 /* =====================================================================
    v5.19 新增：footer + 工具列（feedback / changelog / privacy / terms /
@@ -6567,7 +6633,7 @@ function downloadLifeCertPNG() {
   // 大字歲數
   svgParts.push(`<text x="${W/2}" y="250" font-size="48" fill="#1a1a1a" text-anchor="middle" font-weight="bold">${life.deathAge || life.age} ${t('unit.years')}</text>`);
   // 副標題
-  svgParts.push(`<text x="${W/2}" y="285" font-size="14" fill="#5a4a3a" text-anchor="middle">${LANG==='en'?'Life Expectancy':'預期壽命'} ${c?.le || '—'} ${t('unit.years')}</text>`);
+  svgParts.push(`<text x="${W/2}" y="285" font-size="14" fill="#5a4a3a" text-anchor="middle">${LANG==='en'?'Life Expectancy':'預期壽命'} ${c ? effectiveLe(c) : '—'} ${t('unit.years')}</text>`);
   // 詳情
   const rowY = 320;
   const rows = [
@@ -6652,7 +6718,7 @@ function downloadBirthCardPNG() {
   // 大字年齡
   parts.push(`<text x="${W/2}" y="270" font-size="56" fill="#1a1a1a" text-anchor="middle" font-weight="bold">${life.age} ${t('unit.years')}</text>`);
   // 副標題
-  parts.push(`<text x="${W/2}" y="305" font-size="14" fill="#5a4a3a" text-anchor="middle">${isEn?'Life expectancy':'預期壽命'} ${c.le} ${t('unit.years')} · ${isEn?'Born in':'出生於'} ${escapeHtml(loc.name)}</text>`);
+  parts.push(`<text x="${W/2}" y="305" font-size="14" fill="#5a4a3a" text-anchor="middle">${isEn?'Life expectancy':'預期壽命'} ${effectiveLe(c)} ${t('unit.years')} · ${isEn?'Born in':'出生於'} ${escapeHtml(loc.name)}</text>`);
   // 家庭背景
   const fd = life.fatherDetail || {};
   const md = life.motherDetail || {};

@@ -1,4 +1,4 @@
-# born-somewhere v6.12
+# born-somewhere v6.35
 
 172 國真實統計人生模擬遊戲。從 1in8b.life（原作 v0.7.68 beta）的功能完整移植並擴充，**融合了 zu-pu 的族譜模組**（GEDCOM 5.5.1 雙向互通）。
 
@@ -6,7 +6,7 @@
 
 ## 部署
 
-https://qcm8a40uzgrkv.space.mcode.cn
+https://life.zenmatrix.org
 
 ## 與 1in8b.life 的功能對齊
 
@@ -57,7 +57,7 @@ https://qcm8a40uzgrkv.space.mcode.cn
 | 回饋按鈕 | `renderFeedbackModal()` | ✅ v5.19 |
 | PWA 加入主畫面 | `setupPWAInstall()` + manifest.json | ✅ v5.19 |
 | 教學版（隱沉重事件）| `checkEduMode()` `?edu=1` | ✅ v5.19 |
-| contact@born-somewhere 連結 | footer | ✅ v5.19 |
+| 聯絡我們 info@zenmatrix.org | footer + 意見回饋 | ✅ v6.15 |
 | Service Worker（離線 cache）| `sw.js` cache-first | ✅ v5.19 |
 | 9 國螢幕適配（4 語言 word-break）| CSS lang 條件 | ✅ 1in8b.life 對齊 |
 | 姓名 + 出生 + 註冊編號護照格式 | 全部顯示 | ✅ v5.17 + v5.18 |
@@ -130,12 +130,12 @@ zu-pu v1 已整合為本 repo 的 `zu-pu/` 子目錄（含 30 人張氏範例家
 
 ## 貢獻
 
-基於 1in8b.life（原作，CC BY 4.0）+ zu-pu v1 的概念延伸。資料來源：聯合國《世界人口展望2024》、世界銀行 WDI、WHO、UNESCO UIS、UNDP HDR、ILO、UNAIDS、UNODC、UNICEF、生活滿意度報告2024。
+程式碼以 MIT 授權釋出（見 [LICENSE](LICENSE)），第三方內容與資料來源見 [ATTRIBUTIONS.md](ATTRIBUTIONS.md)。玩法靈感來自 1in8b.life（該站未聲明程式或內容的開放授權；本作為獨立實作，與原作無隸屬關係）+ zu-pu v1 的概念延伸。資料來源：聯合國《世界人口展望2024》、世界銀行 WDI、WHO、UNESCO UIS、UNDP HDR、ILO、UNAIDS、UNODC、UNICEF、生活滿意度報告2024。
 
 ## 部署
 
 - GitHub：`rollroyces/born-somewhere` main 分支
-- 正式 URL：https://qcm8a40uzgrkv.space.mcode.cn
+- 正式 URL：https://life.zenmatrix.org
 - 含 PWA manifest，可「加到主畫面」離線使用
 - 含 service worker（cache-first 策略）
 - GitHub Pages + 客製 deploy node

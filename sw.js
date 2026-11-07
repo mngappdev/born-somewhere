@@ -1,9 +1,9 @@
-/* born-somewhere service worker v6.12
+/* born-somewhere service worker v6.35
  * Cache-first strategy for the static app shell + countries/i18n JSON.
  * Falls back to network when cache misses, then caches the response.
  */
-const CACHE_NAME = 'born-somewhere-v6.12';
-const APP_VERSION = '6.12.0';
+const CACHE_NAME = 'born-somewhere-v6.35';
+const APP_VERSION = '6.35.0';
 
 // Files we want in the offline shell. List both the entry HTML and the data
 // blob so the game can boot without network.
@@ -13,9 +13,22 @@ const APP_SHELL = [
   './app.js',
   './styles.css',
   './gedcom.js',
+  './fun.js',
+  './fun.css',
+  './keepsake.js',
+  './xl.js',
+  './real.js',
+  './challenge.js',
+  './dynasty.js',
+  './vendor/qrcode-generator.js',
+  './assets/zenmatrix-logo.jpg',
+  './assets/zenmatrix-coin.png',
+  './vendor/opencc-t2cn.js',
+  './assets/wechat-qr.png',
   './data/world-coords.js',
   './data/countries.json',
   './data/i18n.json',
+  './data/story.json',
   './assets/illus-baby-book.jpg',
   './assets/illus-world-people.jpg',
   './assets/illus-time-seed.jpg',
@@ -65,6 +78,8 @@ self.addEventListener('fetch', (event) => {
   // Only handle same-origin GETs (avoid messing with cross-origin beacons)
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // v6.25：公开追思馆 API 一律走网络（蜡烛数、删除都要即时）
+  if (url.pathname.startsWith('/api/')) return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

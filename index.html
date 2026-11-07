@@ -1,11 +1,45 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hans">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <meta name="theme-color" content="#0a0a0a" />
+<meta name="author" content="ZenMatrix · www.zenmatrix.org · info@zenmatrix.org" />
 <meta name="description" content="選一個出生地，從 0 歲活到當地平均壽命。172 國真實生命表、死亡原因分布、出生證書、過去生命書架。本地端儲存，不上傳任何資料。" />
-<title data-t="title">選出生地 · 人生模擬</title>
+<title data-t="title">模拟人生 · 选一个出生地 | Life Simulator</title>
+<!-- 分享预览卡片（WhatsApp / Facebook / LinkedIn / Telegram） -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://life.zenmatrix.org/" />
+<meta property="og:site_name" content="ZenMatrix" />
+<meta property="og:title" content="模拟人生 · 选一个出生地 | Life Simulator" />
+<meta property="og:description" content="选一个出生地，从 0 岁活到当地平均寿命。172 国真实生命表、死亡原因分布、出生证书、过去生命书架。免费，数据只存在你的浏览器。" />
+<meta property="og:image" content="https://www.zenmatrix.org/og/life-simulator.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="模拟人生 Life Simulator — life.zenmatrix.org" />
+<meta property="og:locale" content="zh_CN" />
+
+<!-- X (Twitter) -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="模拟人生 · 选一个出生地 | Life Simulator" />
+<meta name="twitter:description" content="选一个出生地，从 0 岁活到当地平均寿命。172 国真实生命表，免费，数据只存在你的浏览器。" />
+<meta name="twitter:image" content="https://www.zenmatrix.org/og/life-simulator.png" />
+
+<!-- 让搜索引擎和 AI 知道这是什么 -->
+<link rel="canonical" href="https://life.zenmatrix.org/" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "模拟人生 · Life Simulator",
+  "url": "https://life.zenmatrix.org/",
+  "applicationCategory": "GameApplication",
+  "operatingSystem": "Web",
+  "inLanguage": ["zh-Hant", "zh-Hans", "en", "ko", "ja", "vi", "fr", "th", "es"],
+  "license": "https://opensource.org/license/mit",
+  "publisher": { "@type": "Organization", "name": "ZenMatrix", "url": "https://www.zenmatrix.org" }
+}
+</script>
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%238C1D3C'/%3E%3Ctext x='50%25' y='58%25' font-size='38' text-anchor='middle' fill='%23faf7f0' font-family='serif'%3E生%3C/text%3E%3C/svg%3E" />
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%238C1D3C'/%3E%3Ctext x='50%25' y='58%25' font-size='38' text-anchor='middle' fill='%23faf7f0' font-family='serif'%3E生%3C/text%3E%3C/svg%3E" />
@@ -13,11 +47,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="fun.css" />
 </head>
 <body>
 
 <header class="topbar">
-  <a class="brand" href="#" data-t="brand">選出生地</a>
+  <a class="brand" href="#" data-t="brand">模拟人生</a>
   <nav class="topnav">
     <button class="navbtn active" data-view="intro" data-t="nav.intro">開始</button>
     <button class="navbtn" data-view="life" data-t="nav.life">人生</button>
@@ -52,6 +87,7 @@
     <img src="assets/illus-time-seed.jpg" alt="" loading="lazy" decoding="async">
   </div>
   <div class="hero">
+    <div class="hero-brand" data-t="hero.brand">模拟人生</div>
     <h1 class="hero-title">
       <span class="kicker" data-t="intro.kicker">8 億 分 之 1</span>
       <span data-t-html="intro.title">選一個<br/>出<span class="accent">生</span>地</span>
@@ -73,6 +109,25 @@
           <button class="seg-btn active" data-birth-mode="baby" data-t="intro.mode.baby">此刻出生</button>
           <button class="seg-btn" data-birth-mode="all" data-t="intro.mode.all">80 億人活口</button>
         </div>
+      </div>
+      <div class="seg-group">
+        <span class="seg-label" id="funPickLabel">出生地</span>
+        <div class="seg" id="birthPickSeg">
+          <select id="birthCountrySelect" class="seg-btn fun-country-select" aria-label="出生国家"><option value="SGP">🇸🇬 新加坡</option></select>
+          <button class="seg-btn" data-birth-pick="random">🎲 随机扭蛋</button>
+        </div>
+      </div>
+      <div class="seg-group">
+        <span class="seg-label" id="funSexLabel">性别</span>
+        <div class="seg" id="birthSexSeg">
+          <button class="seg-btn" data-birth-sex="auto">自动</button>
+          <button class="seg-btn" data-birth-sex="M">♂ 男</button>
+          <button class="seg-btn" data-birth-sex="F">♀ 女</button>
+        </div>
+      </div>
+      <div class="seg-group">
+        <span class="seg-label" id="funEthLabel">种族</span>
+        <select id="birthEthSelect" class="fun-eth-select"></select>
       </div>
       <div class="seg-group">
         <span class="seg-label" data-t="intro.era">出生的世界</span>
@@ -215,6 +270,8 @@
              🔄 標在「重生」，圖示跟意思剛好相反，容易按錯。改成：
              結束 = ■（停止），重生 = ↺（再來一次），並用 data-t 走 i18n。 -->
         <button class="ltb-pause" id="btnPause" data-t-title="life.pause" aria-label="暫停">❚❚</button>
+        <button class="ltb-more" id="btnStepYear" title="暂停时逐年推进" aria-label="下一年">+1</button>
+        <button class="ltb-more" id="btnLifeMusic" title="配乐" aria-label="配乐">♪</button>
         <button class="ltb-speed-btn" data-speed="1">1×</button>
         <button class="ltb-speed-btn" data-speed="2">2×</button>
         <button class="ltb-speed-btn" data-speed="4">4×</button>
@@ -579,8 +636,9 @@
     <button id="btnInstall" class="footer-btn" data-t="footer.install" hidden>加入主畫面</button>
     <a href="#" id="btnPrivacy" class="footer-link" data-t="footer.privacy">隱私權政策</a>
     <a href="#" id="btnTerms" class="footer-link" data-t="footer.terms">使用須知</a>
-    <a href="mailto:contact@born-somewhere.app" id="btnContact" class="footer-link" data-t="footer.contact">聯絡我們</a>
-    <span class="footer-ver">v6.12 · <span data-t="footer.copyright">CC BY 4.0 · 開放源</span></span>
+    <a href="mailto:info@zenmatrix.org" id="btnContact" class="footer-link" data-t="footer.contact">聯絡我們</a>
+    <a href="https://www.zenmatrix.org/?utm_source=born-somewhere&amp;utm_medium=referral&amp;utm_campaign=footer" target="_blank" rel="noopener" class="footer-link fun-zm-link" id="funZmFooter"><img class="zm-coin" src="assets/zenmatrix-coin.png" alt="" width="18" height="18">ZenMatrix 出品 · www.zenmatrix.org</a>
+    <span class="footer-ver">v6.35 · <a href="LICENSE.txt" target="_blank" rel="noopener" class="footer-link"><span data-t="footer.copyright">MIT · 開放源</span></a></span>
   </div>
 </footer>
 
@@ -638,7 +696,15 @@
 
 <script src="gedcom.js"></script>
 <script src="data/world-coords.js"></script>
+<script src="vendor/opencc-t2cn.js"></script>
 <script src="app.js"></script>
+<script src="fun.js"></script>
+<script src="vendor/qrcode-generator.js"></script>
+<script src="keepsake.js"></script>
+<script src="xl.js"></script>
+<script src="real.js"></script>
+<script src="challenge.js"></script>
+<script src="dynasty.js"></script>
 
 <!-- v5.55：通用決策 modal（重大/小型/家人共決三種版型共用） -->
 <div id="decisionModal" class="modal" hidden>
