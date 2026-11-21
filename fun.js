@@ -31,7 +31,9 @@
      canvas 文字（出生卡 / 证书 PNG）、alert/confirm/prompt。
      ------------------------------------------------------------------ */
   let t2s = null;
-  try { if (window.OpenCC) t2s = window.OpenCC.Converter({ from: 'tw', to: 'cn' }); } catch (e) { t2s = null; }
+  // v6.37：opencc 只在简体时载入（index.html 按语言决定），切到简体时才补载，所以这里改成用到时再建立
+  const getT2s = () => { if (!t2s && window.OpenCC) { try { t2s = window.OpenCC.Converter({ from: 'tw', to: 'cn' }); } catch (e) { t2s = null; } } return t2s; };
+  getT2s();
   const convCache = new Map();
   const HAN = /[㐀-鿿]/;
   /* v6.29：华人忌讳「死」——简体显示时换成较吉祥的说法。
@@ -49,7 +51,7 @@
   ];
   const soften = (s) => { for (const [re, to] of SOFT) s = s.replace(re, to); return s; };
   function toHans(s) {
-    if (!t2s || !s || typeof s !== 'string' || !HAN.test(s)) return s;
+    if (!getT2s() || !s || typeof s !== 'string' || !HAN.test(s)) return s;
     let out = convCache.get(s);
     if (out === undefined) {
       try { out = soften(t2s(s)); } catch (e) { out = s; }
@@ -58,7 +60,7 @@
     }
     return out;
   }
-  const hansOn = () => t2s && typeof LANG !== 'undefined' && LANG === 'zh-Hans';
+  const hansOn = () => getT2s() && typeof LANG !== 'undefined' && LANG === 'zh-Hans';
   const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'NOSCRIPT']);
   const ATTRS = ['title', 'placeholder', 'aria-label', 'alt'];
   function convText(n) {
@@ -877,9 +879,30 @@
      8 类 × 20 句日常片段 + 10 国在地片段。
      ------------------------------------------------------------------ */
   let STORY = null;
-  fetch('data/story.json').then(r => r.json()).then(d => { STORY = d; }).catch(() => { STORY = null; });
-  const sDict = () => (STORY ? (isZh() ? STORY['zh-Hans'] : STORY.en) : null);
-  const sText = (k) => { const d = sDict(); return d && d[k] ? d[k] : null; };
+  fetch('data/story.json').then(r => r.json()).then(d => { STORY = Object.assign(STORY || {}, d); }).catch(() => { /* 篇章停用 */ });
+  /* v6.37：其他语言的篇章在 data/story/<lang>.json（繁体由简体经 OpenCC 转换，其余为翻译）；
+     用到时才下载，下载完之前、或该语言没有档案时用英文。 */
+  const STORY_LANGS = ['zh-Hant', 'ko', 'ja', 'vi', 'fr', 'th', 'es'];
+  const storyLoading = {};
+  function loadStoryLang(l) {
+    if (!STORY_LANGS.includes(l) || (STORY && STORY[l]) || storyLoading[l]) return;
+    storyLoading[l] = fetch(`data/story/${l}.json`).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(d => { STORY = STORY || {}; STORY[l] = d; }).catch(() => { /* 用英文 */ });
+  }
+  const sDict = () => {
+    if (!STORY) return null;
+    const l = typeof LANG === 'undefined' ? 'zh-Hans' : LANG;
+    if (l === 'zh-Hans') return STORY['zh-Hans'] || null;
+    if (STORY[l]) return STORY[l];
+    loadStoryLang(l);
+    return STORY.en || null;
+  };
+  const sText = (k) => { const d = sDict(); if (d && d[k]) return d[k]; const e = STORY && STORY.en; return e && e[k] ? e[k] : null; };
+  // 进游戏就先把目前语言的篇章抓下来（第一段日常叙事通常在 4 岁左右，这之前多半已经到了）
+  const preloadStory = () => { if (typeof LANG !== 'undefined') loadStoryLang(LANG); };
+  setTimeout(preloadStory, 1500);
+  const _setLangS = window.setLang;
+  if (typeof _setLangS === 'function') window.setLang = function () { const r = _setLangS.apply(this, arguments); setTimeout(preloadStory, 0); return r; };
   const LOCAL_COUNTRIES = ['CHN', 'JPN', 'IND', 'USA', 'BRA', 'NGA', 'FRA', 'TWN', 'HKG', 'SGP'];
   const CHAPTERS = [
     { id: 'small-courage', min: 3, max: 5, cond: 'toy', icon: '🧸', fx: [{ knowledge: 2, happiness: -1 }, { social: 2 }, { happiness: 1 }] },
@@ -1455,7 +1478,8 @@
   }
   function causeCard(life) {
     const k = life.cause; const info = CAUSE_INFO[k] || CAUSE_INFO['其他'];
-    const [what, tips] = isZh() ? info.zh : info.en;
+    // v6.37：其他语言查 xl 字典；建议是一组，要逐条查
+    const what = tx(info.zh[0], info.en[0]), tips = (info.en[1] || []).map((e, i) => tx((info.zh[1] || [])[i] || e, e));
     const f = causeFactors(life);
     const label = typeof causeLabel === 'function' ? causeLabel(k) : k;
     return `<div class="fun-cause" id="funCause">

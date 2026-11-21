@@ -641,7 +641,7 @@
     <a href="#" id="btnTerms" class="footer-link" data-t="footer.terms">使用須知</a>
     <a href="mailto:info@zenmatrix.org" id="btnContact" class="footer-link" data-t="footer.contact">聯絡我們</a>
     <a href="https://www.zenmatrix.org/?utm_source=born-somewhere&amp;utm_medium=referral&amp;utm_campaign=footer" target="_blank" rel="noopener" class="footer-link fun-zm-link" id="funZmFooter"><img class="zm-coin" src="assets/zenmatrix-coin-96.png" alt="" width="18" height="18">ZenMatrix 出品 · www.zenmatrix.org</a>
-    <span class="footer-ver">v6.36 · <a href="LICENSE.txt" target="_blank" rel="noopener" class="footer-link"><span data-t="footer.copyright">MIT · 開放源</span></a></span>
+    <span class="footer-ver">v6.37 · <a href="LICENSE.txt" target="_blank" rel="noopener" class="footer-link"><span data-t="footer.copyright">MIT · 開放源</span></a></span>
   </div>
 </footer>
 
@@ -699,13 +699,22 @@
 
 <script src="gedcom.js"></script>
 <script src="data/world-coords.js"></script>
-<script src="vendor/opencc-t2cn.js"></script>
+<!-- v6.37：依语言载入。繁简转换（opencc）只有简体需要；xl 字典只有简体、英文以外需要。
+     运行中切换语言时，app.js 的 loadLangAssets() 会补载缺的那份。 -->
+<script>
+(function () {
+  var L = null; try { L = localStorage.getItem('born-somewhere-v2:lang'); } catch (e) { /* ignore */ }
+  window.__bsLang0 = L || 'zh-Hans';
+  if (window.__bsLang0 === 'zh-Hans') document.write('<script src="vendor/opencc-t2cn.js"><\/script>');
+})();
+</script>
 <script src="app.js"></script>
 <script src="fun.js"></script>
 <script src="vendor/qrcode-generator.js"></script>
 <script src="keepsake.js"></script>
-<script src="xl.js"></script>
-<script src="xl-events.js"></script>
+<script>
+if (window.__bsLang0 !== 'zh-Hans' && window.__bsLang0 !== 'en') document.write('<script src="xl.js"><\/script><script src="xl-events.js"><\/script>');
+</script>
 <script src="real.js"></script>
 <script src="challenge.js"></script>
 <script src="dynasty.js"></script>
