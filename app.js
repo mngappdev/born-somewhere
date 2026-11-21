@@ -26,7 +26,7 @@ let CACHE = { countries: null, i18n: null };
    結果是：更新說明對外顯示 v5.19.0、匯出的出生卡寫 v5.12、匯出的生命證書寫 v5.2，
    而玩家用的其實是 v5.97。分享圖是別人會看到的東西，寫錯版本特別明顯。
    現在這兩張圖都改讀 APP_VERSION；`python3 i18n_audit.py` 第 6 項檢查會擋住以後再漂。 */
-const APP_VERSION = '6.36.0';
+const APP_VERSION = '6.37.0';
 const APP_BUILD = '2026-11-07';
 
 const STATE = {
@@ -928,13 +928,37 @@ async function loadData() {
 }
 /* v6.36：只下載目前語言（data/i18n/<lang>.json，約 1/9 大小）；拆分檔不存在時退回整包 i18n.json */
 const _langLoading = {};
+/* v6.37：index.html 只载入目前语言需要的脚本。切换语言时补载：
+   簡體 → vendor/opencc-t2cn.js（繁轉簡）；簡體、英文以外 → xl.js + xl-events.js（字典）。 */
+const _scriptLoading = {};
+function loadScript(src) {
+  if (_scriptLoading[src]) return _scriptLoading[src];
+  _scriptLoading[src] = new Promise((res) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => res(true); s.onerror = () => { delete _scriptLoading[src]; res(false); };
+    document.head.appendChild(s);
+  });
+  return _scriptLoading[src];
+}
+function langAssetsReady(lang) {
+  if (lang === 'zh-Hans') return !!window.OpenCC;
+  if (lang === 'en') return true;
+  return !!(window.BornXL && window.BornXL.events);
+}
+async function loadLangAssets(lang) {
+  if (langAssetsReady(lang)) return true;
+  if (lang === 'zh-Hans') return loadScript('vendor/opencc-t2cn.js');
+  if (!window.BornXL) await loadScript('xl.js');
+  return loadScript('xl-events.js');
+}
 function loadLang(lang) {
-  if (I18N[lang]) return Promise.resolve(true);
+  if (I18N[lang] && langAssetsReady(lang)) return Promise.resolve(true);
+  if (I18N[lang]) return loadLangAssets(lang).then(() => true);
   if (_langLoading[lang]) return _langLoading[lang];
   _langLoading[lang] = fetch(`data/i18n/${encodeURIComponent(lang)}.json`)
     .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(d => { I18N[lang] = d; return true; })
-    .catch(() => fetch('data/i18n.json').then(r => r.json()).then(all => { Object.assign(I18N, all); return !!I18N[lang]; }))
+    .then(d => { I18N[lang] = d; return loadLangAssets(lang).then(() => true); })
+    .catch(() => fetch('data/i18n.json').then(r => r.json()).then(all => { Object.assign(I18N, all); return loadLangAssets(lang).then(() => !!I18N[lang]); }))
     .catch(() => false)
     .finally(() => { delete _langLoading[lang]; });
   return _langLoading[lang];
@@ -956,12 +980,13 @@ function detectLangFromBrowser() {
   return 'zh-Hant';
 }
 let _langWanted = null;
+const _assetsTried = {};   // 補載腳本失敗（例如離線）時照樣切換，只是少了轉換 / 字典
 function setLang(lang) {
   _langWanted = lang;
   // v6.36：該語言還沒下載時，先下載再切換（再呼叫一次 window.setLang，外層包裝也會跟著重跑）。
   // 下載期間使用者又換了別的語言，就以最後一次的選擇為準。
-  if (!I18N[lang]) {
-    return loadLang(lang).then(ok => { if (ok && I18N[lang] && _langWanted === lang) window.setLang(lang); });
+  if (!I18N[lang] || (!langAssetsReady(lang) && !_assetsTried[lang])) {
+    return loadLang(lang).then(ok => { _assetsTried[lang] = true; if (ok && I18N[lang] && _langWanted === lang) window.setLang(lang); });
   }
   LANG = lang;
   localStorage.setItem(STORAGE_KEY + ':lang', lang);
@@ -1809,7 +1834,7 @@ function milestoneEvents(life, newAge) {
         death: chance((life.countryData.im || 5) / 1000 * 0.3) ? { year: childBirth.year + Math.floor(Math.random() * 5) } : null
       };
       life.family.kids.push(childNode);
-      if (childNode.death && !STATE.eduMode && !STATE.softMode) events.push({ age: newAge, kind: 'heavy', icon: '🕯️', text: LANG === 'en' ? `${childNode.name} died as an infant.` : `${childNode.name} 在嬰幼兒時期夭折了。` });
+      if (childNode.death && !STATE.eduMode && !STATE.softMode) events.push({ age: newAge, kind: 'heavy', icon: '🕯️', text: _xl(`${childNode.name} 在嬰幼兒時期夭折了。`, `${childNode.name} died as an infant.`) });
     }
     events.push({ age: newAge, kind: 'milestone', icon: '👶', text: t('event.baby', life.stats.kids.length) });
   }
@@ -1837,7 +1862,7 @@ function milestoneEvents(life, newAge) {
   }
   // 紐澳原住民加成
   if ((life.country === 'NZL' || life.country === 'AUS') && newAge === 18 && chance(0.5)) {
-    events.push({ age: newAge, kind: 'social', icon: '🌿', text: LANG === 'en' ? 'You identify as indigenous; get education & health support.' : '你被認定為原住民後裔，獲得教育補助與健康資源。' });
+    events.push({ age: newAge, kind: 'social', icon: '🌿', text: _xl('你被認定為原住民後裔，獲得教育補助與健康資源。', 'You identify as indigenous; get education & health support.') });
   }
   // 戰爭/衝突（教學版過濾掉）
   // v5.62：每種戰爭事件一生只出現一次，全部用完就不再抽
@@ -1866,7 +1891,7 @@ function milestoneEvents(life, newAge) {
     if (chance(0.04)) {
       life.fc = { in: 1, system: 'state', type: 'foster' };
       life.family = generateFamily(life.country, life.sex, { type: 'foster' });
-      events.push({ age: 0, kind: 'heavy', icon: '🏠', text: LANG === 'en' ? 'You enter foster care due to family circumstances.' : '出生後因家庭變故，被送進寄養系統，由寄養父母撫養。' });
+      events.push({ age: 0, kind: 'heavy', icon: '🏠', text: _xl('出生後因家庭變故，被送進寄養系統，由寄養父母撫養。', 'You enter foster care due to family circumstances.') });
     }
   }
   // 國際收養（韓/中/越/柬/泰/印）
@@ -1882,9 +1907,9 @@ function milestoneEvents(life, newAge) {
     life.country = newCountry;
     life.countryData = newCountryData;
     life.birthOrigin = { country: oldCountry, flag: oldFlag };  // 記錄出生國家
-    events.push({ age: 0, kind: 'social', icon: '🌍', text: LANG === 'en' ? `You are adopted by a foreign family (${oldFlag} → ${newFlag}) and grow up in another country.` : `你被一對外國夫婦收養 ${oldFlag} → ${newFlag}，離開出生地到另一個國家長大。` });
+    events.push({ age: 0, kind: 'social', icon: '🌍', text: _xl(`你被一對外國夫婦收養 ${oldFlag} → ${newFlag}，離開出生地到另一個國家長大。`, `You are adopted by a foreign family (${oldFlag} → ${newFlag}) and grow up in another country.`) });
     // 遷徙動畫 toast
-    setTimeout(() => toast(`${oldFlag} → ${newFlag}  ${LANG==='en'?'Migration':'遷徙'}`), 200);
+    setTimeout(() => toast(`${oldFlag} → ${newFlag}  ${_xl('遷徙', 'Migration')}`), 200);
   }
   if (life.country === 'IND' && life.name.caste === 'SC' && newAge >= 18 && chance(0.05)) {
     events.push({ age: newAge, kind: 'social', icon: '📋', text: t('event.caste.form') });
@@ -1934,7 +1959,7 @@ function replayLastMoments() {
   const lastEvents = (life.log || []).slice(-5);  // 最後 5 條
   const list = $('#endLastMomentsList');
   if (!list) return;
-  list.innerHTML = lastEvents.map(e => `<div class="elm-row"><span class="elm-age">${e.age} ${t('unit.years')}</span><span class="elm-icon">${e.icon || '·'}</span><span class="elm-text">${escapeHtml(e.text || '')}</span></div>`).join('') || `<span class="muted">${isEn?'No events':'無事件'}</span>`;
+  list.innerHTML = lastEvents.map(e => `<div class="elm-row"><span class="elm-age">${e.age} ${t('unit.years')}</span><span class="elm-icon">${e.icon || '·'}</span><span class="elm-text">${escapeHtml(e.text || '')}</span></div>`).join('') || `<span class="muted">${_xl('無事件', 'No events')}</span>`;
   $('#endLastMoments')?.removeAttribute('hidden');
 }
 
@@ -1943,14 +1968,14 @@ function submitFeedback() {
   const email = $('#feedbackEmail')?.value || '';
   const text = $('#feedbackText')?.value || '';
   if (!text || text.length < 5) {
-    toast(LANG === 'en' ? 'Please write at least 5 characters' : '請至少寫 5 個字');
+    toast(_xl('請至少寫 5 個字', 'Please write at least 5 characters'));
     return;
   }
   const feedbacks = JSON.parse(localStorage.getItem('born-somewhere-v2:feedbacks') || '[]');
   feedbacks.push({ ts: Date.now(), email, text, lang: LANG });
   localStorage.setItem('born-somewhere-v2:feedbacks', JSON.stringify(feedbacks));
   $('#feedbackModal')?.setAttribute('hidden', '');
-  toast(LANG === 'en' ? 'Feedback sent (saved locally)' : '感謝您的意見（已存於本機）');
+  toast(_xl('感謝您的意見（已存於本機）', 'Feedback sent (saved locally)'));
   if ($('#feedbackText')) $('#feedbackText').value = '';
   if ($('#feedbackEmail')) $('#feedbackEmail').value = '';
 }
@@ -2120,7 +2145,7 @@ function dieNow(forcedCause) {
   STATE.life.died = true;
   STATE.life.cause = cause;
   STATE.life.deathAge = STATE.life.age;
-  STATE.life.log.push({ age: STATE.life.age, kind: 'death', icon: '🕯️', text: t('log.died_of', cause) });
+  STATE.life.log.push({ age: STATE.life.age, kind: 'death', icon: '🕯️', text: t('log.died_of', causeLabel(cause)) });
   savePastLife(STATE.life);
   stopTicker();
   // v5.43：用 setView() 才會真的切換 .view 面板的顯示（原本直接賦值 STATE.view 只更新資料、不換畫面）
@@ -2153,7 +2178,7 @@ function showPauseQuestion() {
   const modal = $('#pauseModal');
   if (!modal) return;
   const q = $('#pauseQuestion');
-  if (q) q.textContent = LANG === 'en' ? `If ${age}-year-old you could remember one thing...` : `如果 ${age} 歲的你能記得一件事⋯`;
+  if (q) q.textContent = _xl(`如果 ${age} 歲的你能記得一件事⋯`, `If ${age}-year-old you could remember one thing...`);
   const input = $('#pauseInput');
   if (input) input.value = STATE.life.quotes[age] || '';
   modal.removeAttribute('hidden');
@@ -2188,7 +2213,7 @@ function showFocusChoice() {
     { id:'health', icon:'🏃', en:'Stay active', zh:'保持活力' },
   ];
   const q = $('#focusQuestion');
-  if (q) q.textContent = isEn ? `Age ${age} — What do you want to focus on this year?` : `${age} 歲——這一年你想把重心放在哪？`;
+  if (q) q.textContent = _xl(`${age} 歲——這一年你想把重心放在哪？`, `Age ${age} — What do you want to focus on this year?`);
   // v5.19：每個選項的影響細節 tooltip
   const tooltips = isEn ? {
     study:  '📚 +3 Knowledge · +1 Happiness',
@@ -2213,7 +2238,7 @@ function showFocusChoice() {
       STATE.life.focus = focus;
       const opt = focusOpts.find(o=>o.id===focus);
       STATE.life.log.push({ age, kind:'focus', icon: opt?.icon || '·', text: `${_xl('重心', 'Focus')}：${opt ? _xl(opt.zh, opt.en) : focus}` });
-      logLife(isEn ? `Focus: ${opt?.en}` : `這一年焦點：${opt?.zh}`);
+      logLife(_xl(`這一年焦點：${opt?.zh}`, `Focus: ${opt?.en}`));
       applyFocusEffects(focus);
       closeModal('focusModal');
     });
@@ -2261,19 +2286,19 @@ function showFinanceModal(forceOpt) {
   const auto = life.autoInvest ? 'active' : '';
   const annualCost = Math.round(netAssets * 0.03);  // 假設生活方式成本 3%
   const q = $('#financeQuestion');
-  if (q) q.textContent = isEn ? `Net Worth: ${currency || 'US$'}${netAssets.toLocaleString()}` : `積蓄：${currency || 'NT$'}${netAssets.toLocaleString()}`;
+  if (q) q.textContent = _xl(`積蓄：${currency || 'NT$'}${netAssets.toLocaleString()}`, `Net Worth: ${currency || 'US$'}${netAssets.toLocaleString()}`);
   const body = $('#financeBody');
   if (body) {
     body.innerHTML = `
-      <p class="muted fin-intro">${isEn ? 'Spending affects happiness, social, health and future.':'金額以當地物價換算。你怎麼花錢，會改變你的幸福、人際關係、健康和未來。'}</p>
+      <p class="muted fin-intro">${_xl('金額以當地物價換算。你怎麼花錢，會改變你的幸福、人際關係、健康和未來。', 'Spending affects happiness, social, health and future.')}</p>
       <div class="fin-actions">
         <div class="fin-cost">
-          <strong>${isEn?'Family/friend dinners + gifts':'和家人朋友聚餐·送禮'}</strong>
-          <span class="fin-effect">${isEn?'social +4 · happy +2 · not enough':'人際關係 +4 · 幸福 +2 · 錢不夠'}</span>
+          <strong>${_xl('和家人朋友聚餐·送禮', 'Family/friend dinners + gifts')}</strong>
+          <span class="fin-effect">${_xl('人際關係 +4 · 幸福 +2 · 錢不夠', 'social +4 · happy +2 · not enough')}</span>
           <span class="fin-price">${currency}${annualCost.toLocaleString()}</span>
         </div>
       </div>
-      <h4>${isEn?'Idle money investment':'閒錢理財'}</h4>
+      <h4>${_xl('閒錢理財', 'Idle money investment')}</h4>
       <div class="fin-grid">
         ${INVEST_OPTIONS.map(o => `
           <button class="fin-opt ${o.id===currentInvest?'active':''}" data-id="${o.id}">
@@ -2283,10 +2308,10 @@ function showFinanceModal(forceOpt) {
           </button>
         `).join('')}
       </div>
-      <p class="fin-info muted">${isEn?'Switching choices pays fees; profits may be taxed. Real estate is separate. Most traders underperform the index.':'點選其他選項，就會賣出後轉過去。賣出時要付手續費，依國家而定，獲利可能還要繳稅。不動產基金和自己的房子是分開的：自己住的房子請在「買自己的房子」中購買，出租用的房子請在「出租用的房子」中購買。多數人賺得比指數少。'}</p>
+      <p class="fin-info muted">${_xl('點選其他選項，就會賣出後轉過去。賣出時要付手續費，依國家而定，獲利可能還要繳稅。不動產基金和自己的房子是分開的：自己住的房子請在「買自己的房子」中購買，出租用的房子請在「出租用的房子」中購買。多數人賺得比指數少。', 'Switching choices pays fees; profits may be taxed. Real estate is separate. Most traders underperform the index.')}</p>
       <div class="fin-auto">
-        <button id="finAutoBtn" class="${auto === 'active' ? 'active':''}">${isEn?'▶ Auto-execute (yearly)':'▶ 自動進行（每年）'}</button>
-        <p class="muted">${isEn?'Once enabled, when triggered: family gifts, dates, dining, travel, classes, donations happen automatically. Only if savings > 3× the cost.':'開啟後，每到時候就會自動進行。需要花錢的事，只有在存款超過費用的三倍時才會進行。孝親費、約會、外食、旅行、上課和捐款，只有在花完之後還能剩下一般人一年的收入時才會進行；開啟得越多，能存下的錢就越少。'}</p>
+        <button id="finAutoBtn" class="${auto === 'active' ? 'active':''}">${_xl('▶ 自動進行（每年）', '▶ Auto-execute (yearly)')}</button>
+        <p class="muted">${_xl('開啟後，每到時候就會自動進行。需要花錢的事，只有在存款超過費用的三倍時才會進行。孝親費、約會、外食、旅行、上課和捐款，只有在花完之後還能剩下一般人一年的收入時才會進行；開啟得越多，能存下的錢就越少。', 'Once enabled, when triggered: family gifts, dates, dining, travel, classes, donations happen automatically. Only if savings > 3× the cost.')}</p>
       </div>
     `;
     // wire
@@ -2297,7 +2322,7 @@ function showFinanceModal(forceOpt) {
         const opt = INVEST_OPTIONS.find(o => o.id === choice);
         if (opt) {
           // apply current return rate
-          toast(isEn ? `Investment set to ${opt.en}` : `投資已設為 ${opt.zh}`);
+          toast(_xl(`投資已設為 ${opt.zh}`, `Investment set to ${opt.en}`));
         }
         closeModal('financeModal');
       });
@@ -2352,27 +2377,27 @@ function showFinancialChoice() {
   // v5.19：先建好 choices，再依據「快速決定」標記誰是預設
   let choices;
   if (age === 18) choices = [
-    { id:'study_loan', text: isEn?'Take student loan to study':'學生貸款升學', delta:{net:-5000, knowledge:+10} },
-    { id:'work', text: isEn?'Start working immediately':'直接工作', delta:{net:+3000} },
-    { id:'trade', text: isEn?'Learn a trade':'學手藝', delta:{net:+1000, knowledge:+5} },
+    { id:'study_loan', text: _xl('學生貸款升學', 'Take student loan to study'), delta:{net:-5000, knowledge:+10} },
+    { id:'work', text: _xl('直接工作', 'Start working immediately'), delta:{net:+3000} },
+    { id:'trade', text: _xl('學手藝', 'Learn a trade'), delta:{net:+1000, knowledge:+5} },
   ];
   else if (age === 25) choices = [
-    { id:'save', text: isEn?'Save aggressively':'積極儲蓄', delta:{net:+8000, happiness:-5} },
-    { id:'travel', text: isEn?'Travel the world':'環遊世界', delta:{net:-6000, happiness:+10, social:+5} },
-    { id:'invest', text: isEn?'Start investing':'開始投資', delta:{net:+5000, knowledge:+3} },
+    { id:'save', text: _xl('積極儲蓄', 'Save aggressively'), delta:{net:+8000, happiness:-5} },
+    { id:'travel', text: _xl('環遊世界', 'Travel the world'), delta:{net:-6000, happiness:+10, social:+5} },
+    { id:'invest', text: _xl('開始投資', 'Start investing'), delta:{net:+5000, knowledge:+3} },
   ];
   else if (age === 35) choices = [
-    { id:'house', text: isEn?'Buy a house':'買房', delta:{net:-50000, happiness:+5} },
-    { id:'kids', text: isEn?'Have children':'生孩子', delta:{net:-10000, happiness:+10, social:+5} },
-    { id:'career', text: isEn?'Focus on career':'衝刺事業', delta:{net:+20000} },
+    { id:'house', text: _xl('買房', 'Buy a house'), delta:{net:-50000, happiness:+5} },
+    { id:'kids', text: _xl('生孩子', 'Have children'), delta:{net:-10000, happiness:+10, social:+5} },
+    { id:'career', text: _xl('衝刺事業', 'Focus on career'), delta:{net:+20000} },
   ];
   else choices = [
-    { id:'retire', text: isEn?'Save for retirement':'為退休儲蓄', delta:{net:+50000} },
-    { id:'enjoy', text: isEn?'Enjoy life now':'及時行樂', delta:{net:-10000, happiness:+10} },
-    { id:'give_back', text: isEn?'Donate to charity':'慈善捐贈', delta:{net:-15000, happiness:+15} },
+    { id:'retire', text: _xl('為退休儲蓄', 'Save for retirement'), delta:{net:+50000} },
+    { id:'enjoy', text: _xl('及時行樂', 'Enjoy life now'), delta:{net:-10000, happiness:+10} },
+    { id:'give_back', text: _xl('慈善捐贈', 'Donate to charity'), delta:{net:-15000, happiness:+15} },
   ];
   const q = $('#financeQuestion');
-  if (q) q.textContent = isEn ? `Age ${age} — How do you want to handle your money?` : `${age} 歲——你要怎麼處理你的錢？`;
+  if (q) q.textContent = _xl(`${age} 歲——你要怎麼處理你的錢？`, `Age ${age} — How do you want to handle your money?`);
   const body = $('#financeBody');
   // v5.19：「最便宜」= delta.net 最低（最負 / 最少正）
   const cheapestIdx = (() => {
@@ -2393,11 +2418,11 @@ function showFinancialChoice() {
       if (d.happiness) tags.push(`<span class="fin-stat">${d.happiness > 0 ? '+' : ''}${d.happiness} 😊</span>`);
       if (d.social) tags.push(`<span class="fin-stat">${d.social > 0 ? '+' : ''}${d.social} 👥</span>`);
       const isCheap = i === cheapestIdx;
-      const badge = isCheap ? `<span class="fin-badge">${isEn ? '⚡ auto' : '⚡ 自動'}</span>` : '';
+      const badge = isCheap ? `<span class="fin-badge">${_xl('⚡ 自動', '⚡ auto')}</span>` : '';
       return `<button class="finance-btn" data-idx="${i}"><span class="fin-text">${c.text}${badge}</span><span class="fin-tags">${tags.join(' ')}</span></button>`;
     }).join('')}</div>
     <div class="fc-auto-row">
-      <button id="btnFinanceAuto" class="fc-auto-btn">⚡ ${isEn ? 'Quick-decide (pick cheapest)' : '快速決定（最便宜的選項）'}</button>
+      <button id="btnFinanceAuto" class="fc-auto-btn">⚡ ${_xl('快速決定（最便宜的選項）', 'Quick-decide (pick cheapest)')}</button>
     </div>
   `;
   body.querySelectorAll('.finance-btn').forEach(btn => {
@@ -2410,7 +2435,7 @@ function showFinancialChoice() {
   $('#btnFinanceAuto')?.addEventListener('click', () => {
     applyFinanceChoice(choices, cheapestIdx, isEn);
     closeModal('financeModal');
-    toast(isEn ? '⚡ Auto-picked cheapest option' : '⚡ 已自動選最便宜的選項');
+    toast(_xl('⚡ 已自動選最便宜的選項', '⚡ Auto-picked cheapest option'));
   });
   modal.removeAttribute('hidden');
 }
@@ -2431,7 +2456,7 @@ function showSpendModal() {
       const s = STATE.life.stats;
       const cost = Math.max(50, Math.round((s.netAssets || 1000) * 0.03));
       if ((s.netAssets || 0) < cost) {
-        toast(LANG === 'en' ? 'Not enough money' : '錢不夠');
+        toast(_xl('錢不夠', 'Not enough money'));
         closeModal('spendModal');
         return;
       }
@@ -2442,7 +2467,7 @@ function showSpendModal() {
       else if (act === 'lifestyle') { s.health = Math.min(100, s.health + 1); s.happiness = Math.min(100, s.happiness + 1); }
       STATE.life.log.push({ age: STATE.life.age, kind: 'finance', icon: '💰', text: `${act} -${cost}` });
       renderLifeStats();
-      toast(LANG === 'en' ? `Spent ${cost}` : `支出 ${cost}`);
+      toast(_xl(`支出 ${cost}`, `Spent ${cost}`));
       closeModal('spendModal');
     });
   });
@@ -2457,7 +2482,7 @@ function applyFinanceChoice(choices, idx, isEn) {
   if (d.knowledge) STATE.life.stats.knowledge = Math.min(100, Math.max(0, STATE.life.stats.knowledge + d.knowledge));
   if (d.happiness) STATE.life.stats.happiness = Math.min(100, Math.max(0, STATE.life.stats.happiness + d.happiness));
   if (d.social) STATE.life.stats.social = Math.min(100, Math.max(0, STATE.life.stats.social + d.social));
-  STATE.life.log.push({ age: STATE.life.age, kind:'finance', icon:'💰', text: (isEn ? 'Money: ' : '理財：') + choice.text });
+  STATE.life.log.push({ age: STATE.life.age, kind:'finance', icon:'💰', text: (_xl('理財：', 'Money: ')) + choice.text });
   logLife('💰 ' + choice.text);
   renderLifeStats();
 }
@@ -2663,10 +2688,10 @@ function renderLifeEventsFeed() {
   const siblingCount = (STATE.life.family?.siblings || []).length;
   const canMore = log.length > shown;
   const nextLabel = shown >= log.length ? null
-    : shown < 30 ? (isEn ? `Show older (${Math.min(30, log.length) - shown} more)` : `看更早的 ${Math.min(30, log.length) - shown} 筆`)
-    : (isEn ? 'Show all' : `看全部 ${log.length} 筆`);
+    : shown < 30 ? (_xl(`看更早的 ${Math.min(30, log.length) - shown} 筆`, `Show older (${Math.min(30, log.length) - shown} more)`))
+    : (_xl(`看全部 ${log.length} 筆`, 'Show all'));
   const headerHtml = `<div class="lef-header">
-    <span class="lef-meta">${isEn ? `Currently ${30000 + Math.floor(Math.random()*1000)} people in the world` : `此刻有 ${30000 + Math.floor(Math.random()*1000)} 人一起活在這個人生模擬裡`}${siblingCount ? ` · ${isEn ? 'Siblings' : '兄弟姊妹'}：${siblingCount} ${isEn?'ppl':'人'}` : ''} · ${isEn ? 'showing' : '顯示'} ${shown}/${log.length}</span>
+    <span class="lef-meta">${_xl(`此刻有 ${30000 + Math.floor(Math.random()*1000)} 人一起活在這個人生模擬裡`, `Currently ${30000 + Math.floor(Math.random()*1000)} people in the world`)}${siblingCount ? ` · ${_xl('兄弟姊妹', 'Siblings')}：${siblingCount} ${_xl('人', 'ppl')}` : ''} · ${_xl('顯示', 'showing')} ${shown}/${log.length}</span>
     ${canMore ? `<button class="lef-more-btn" id="feedMoreBtn">${nextLabel}</button>` : ''}
   </div>`;
   el.innerHTML = headerHtml + log.slice(-shown).reverse().map((e, i) => `
@@ -2674,9 +2699,9 @@ function renderLifeEventsFeed() {
       <span class="lef-age">${e.age ?? '?'} ${t('unit.years')}</span>
       <span class="lef-icon">${e.icon || '·'}</span>
       <span class="lef-text">${linkifyCountries(escapeHtml(e.text || ''))}</span>
-      <span class="lef-star" data-i="${e._i = (e._i ?? (log.length - 1 - i))}" title="${isEn?'Star this moment':'加星此時刻'}">${e.starred ? '★' : '☆'}</span>
+      <span class="lef-star" data-i="${e._i = (e._i ?? (log.length - 1 - i))}" title="${_xl('加星此時刻', 'Star this moment')}">${e.starred ? '★' : '☆'}</span>
     </div>
-  `).join('') || `<span class="muted">${isEn ? 'No events' : '無事件'}</span>`;
+  `).join('') || `<span class="muted">${_xl('無事件', 'No events')}</span>`;
   // v5.65：「看更早」逐級展開
   $('#feedMoreBtn')?.addEventListener('click', (ev) => {
     ev.stopPropagation();
@@ -2691,7 +2716,7 @@ function renderLifeEventsFeed() {
       if (evt) {
         evt.starred = !evt.starred;
         renderLifeEventsFeed();
-        toast(evt.starred ? (isEn?'★ Moment starred':'★ 已記下此時刻') : (isEn?'☆ Unstarred':'☆ 已取消記下'));
+        toast(evt.starred ? (_xl('★ 已記下此時刻', '★ Moment starred')) : (_xl('☆ 已取消記下', '☆ Unstarred')));
       }
     });
   });
@@ -2889,14 +2914,14 @@ function renderProbTable() {
   const mode = STATE.birthMode === 'all' ? 'all' : 'baby';
   const rows = countryProbabilities(mode, 10);
   const modeLabel = mode === 'all'
-    ? (isEn ? '8 billion alive' : '80 億人活口')
-    : (isEn ? 'Just born' : '此刻出生');
+    ? (_xl('80 億人活口', '8 billion alive'))
+    : (_xl('此刻出生', 'Just born'));
   wrap.innerHTML = `
-    <h3>${isEn ? 'If you were born right now…' : '如果你此刻出生⋯⋯'} <span class="muted">(${modeLabel})</span></h3>
+    <h3>${_xl('如果你此刻出生⋯⋯', 'If you were born right now…')} <span class="muted">(${modeLabel})</span></h3>
     <table class="prob-table">
       <thead><tr>
-        <th>${isEn ? 'Country' : '國家'}</th>
-        <th class="prob-pct">${isEn ? 'Probability' : '機率'}</th>
+        <th>${_xl('國家', 'Country')}</th>
+        <th class="prob-pct">${_xl('機率', 'Probability')}</th>
         <th class="prob-bar-col"></th>
       </tr></thead>
       <tbody>
@@ -2910,7 +2935,7 @@ function renderProbTable() {
         }).join('')}
       </tbody>
     </table>
-    <p class="muted">${isEn ? 'Source: UN WPP 2024 (annual births / total population by country)' : '資料來源：聯合國《世界人口展望 2024》（各國年度出生數／總人口）'}</p>
+    <p class="muted">${_xl('資料來源：聯合國《世界人口展望 2024》（各國年度出生數／總人口）', 'Source: UN WPP 2024 (annual births / total population by country)')}</p>
   `;
 }
 
@@ -2933,12 +2958,12 @@ function renderCountryCompare() {
   const fmtPct = (n) => (n < 0.1 ? n.toFixed(2) : n.toFixed(1)) + '%';
   const fmtMoney = (n) => '$' + Math.round(n).toLocaleString();
   wrap.innerHTML = `
-    <h3>${isEn ? 'If you were born now, your life vs. a random one' : '如果你此刻出生：你的人生 vs 隨機的人生'}</h3>
+    <h3>${_xl('如果你此刻出生：你的人生 vs 隨機的人生', 'If you were born now, your life vs. a random one')}</h3>
     <table class="cmp-table">
       <thead><tr>
         <th></th>
-        <th>${me.flag} ${escapeHtml(loc(me))}<div class="cmp-sub">${isEn ? 'Where you probably are' : '你實際所在地'}</div></th>
-        <th>${random.flag} ${escapeHtml(loc(random))}<div class="cmp-sub">${isEn ? 'Random draw' : '隨機抽中'}</div></th>
+        <th>${me.flag} ${escapeHtml(loc(me))}<div class="cmp-sub">${_xl('你實際所在地', 'Where you probably are')}</div></th>
+        <th>${random.flag} ${escapeHtml(loc(random))}<div class="cmp-sub">${_xl('隨機抽中', 'Random draw')}</div></th>
       </tr></thead>
       <tbody>
         <tr>
@@ -2958,7 +2983,7 @@ function renderCountryCompare() {
         </tr>
       </tbody>
     </table>
-    <p class="muted">${isEn ? 'Detected from browser language / locale. You can override by selecting one in the country list above.' : '依瀏覽器語系／地區推測。你可以從上方國家清單覆寫。'}</p>
+    <p class="muted">${_xl('依瀏覽器語系／地區推測。你可以從上方國家清單覆寫。', 'Detected from browser language / locale. You can override by selecting one in the country list above.')}</p>
   `;
 }
 
@@ -3065,7 +3090,7 @@ function renderLife() {
   const educLabels = ['—', t('edu.0')+'（'+t('edu.pre')+'）', t('edu.1'), t('edu.2'), t('edu.3'), t('edu.4')];
   $('#lifeEduc').textContent = educLabels[Math.min(STATE.life.stats.education + 1, educLabels.length - 1)];
   // 工作：顯示 sector + 是否在職
-  $('#lifeJob').textContent = STATE.life.stats.employment === 'employed' ? `${jobLabel('employed')} · ${LANG==='en'?'employed':'在職'}` : jobLabel(STATE.life.stats.employment);
+  $('#lifeJob').textContent = STATE.life.stats.employment === 'employed' ? `${jobLabel('employed')} · ${_xl('在職', 'employed')}` : jobLabel(STATE.life.stats.employment);
   // 伴侶：顯示名字 + 年齡
   if (STATE.life.stats.married && STATE.life.stats.partner) {
     const p = STATE.life.stats.partner;
@@ -3079,7 +3104,7 @@ function renderLife() {
   if (STATE.life.stats.kids.length) {
     const ages = STATE.life.stats.kids.map(k => k.bornAt ? STATE.life.age - k.bornAt : null).filter(a => a !== null);
     const oldest = ages.length ? Math.max(...ages) : null;
-    $('#lifeKids').textContent = `${STATE.life.stats.kids.length}${LANG==='en'?` (oldest: ${oldest})`:`（最大的 ${oldest} 歲）`}`;
+    $('#lifeKids').textContent = `${STATE.life.stats.kids.length}${_xl(`（最大的 ${oldest} 歲）`, ` (oldest: ${oldest})`)}`;
   } else {
     $('#lifeKids').textContent = '0';
   }
@@ -3100,7 +3125,7 @@ function renderLife() {
     if (!STATE.life.stats.birthPlaceType) {
       STATE.life.stats.birthPlaceType = Math.random() < 0.55 ? 'rural' : 'urban';
     }
-    const bpType = STATE.life.stats.birthPlaceType === 'rural' ? (isEn ? '🌾 Rural' : '🌾 鄉村') : (isEn ? '🏙️ Urban' : '🏙️ 城市');
+    const bpType = STATE.life.stats.birthPlaceType === 'rural' ? (_xl('🌾 鄉村', '🌾 Rural')) : (_xl('🏙️ 城市', '🏙️ Urban'));
     cInfo.textContent = `${bpType} · ${c.flag} ${loc.name} · ${loc.region_name}`;
   }
   // 家族摘要
@@ -3130,12 +3155,12 @@ function renderThisYear() {
   if (!wrap) return;
   const evt = STATE.life.latestEvent;
   const isEn = LANG === 'en';
-  if (!evt) { wrap.innerHTML = `<span class="muted">${isEn ? '(no major event this year yet)':'（今年尚無重大事件）'}</span>`; return; }
+  if (!evt) { wrap.innerHTML = `<span class="muted">${_xl('（今年尚無重大事件）', '(no major event this year yet)')}</span>`; return; }
   wrap.innerHTML = `
     <div class="ty-event">
       <span class="ty-icon">${evt.icon}</span>
       <span class="ty-text">${escapeHtml(evt.text)}</span>
-      <span class="ty-age">${isEn ? `Age ${evt.age}` : `${evt.age} 歲`}</span>
+      <span class="ty-age">${_xl(`${evt.age} 歲`, `Age ${evt.age}`)}</span>
     </div>
   `;
 }
@@ -3175,7 +3200,7 @@ function renderLifeMap() {
     cells += `<rect x="${x+1}" y="${y+1}" width="10" height="10" fill="${fill}" opacity="${isDead?0.3:0.85}" stroke="${isCurrent?'#8C1D3C':'none'}" stroke-width="${isCurrent?2:0}"/>`;
   }
   wrap.innerHTML = `
-    <h4>🗺️ ${isEn ? 'Life Map' : '人生地圖'} <span class="muted">${isEn ? '1 cell = 1 year · darker = happier':'1格=1年 · 顏色越深越幸福'}</span></h4>
+    <h4>🗺️ ${_xl('人生地圖', 'Life Map')} <span class="muted">${_xl('1格=1年 · 顏色越深越幸福', '1 cell = 1 year · darker = happier')}</span></h4>
     <svg viewBox="0 0 ${W} ${H}" class="life-map-svg" style="width:100%;max-width:480px;height:auto;display:block;margin:6px auto;">
       <rect x="0" y="0" width="${W}" height="${H}" fill="#faf7f0"/>
       ${cells}
@@ -3226,7 +3251,7 @@ function renderLifeTrajectory() {
     return `<circle cx="${projX(myAge)}" cy="${projY(norm(L.key, v))}" r="3" fill="${L.color}" stroke="white" stroke-width="1"/>`;
   }).join('');
   wrap.innerHTML = `
-    <h4>📊 ${isEn ? '5 Life Dimensions Over Time' : '5 個面向終身軌跡'} <span class="muted">(${isEn ? 'past → present':'過去→現在'})</span></h4>
+    <h4>📊 ${_xl('5 個面向終身軌跡', '5 Life Dimensions Over Time')} <span class="muted">(${_xl('過去→現在', 'past → present')})</span></h4>
     <svg viewBox="0 0 ${W} ${H}" class="trajectory-svg" style="width:100%;height:auto;">
       <rect x="0" y="0" width="${W}" height="${H}" fill="#faf7f0"/>
       <line x1="40" y1="${H-30}" x2="${W-10}" y2="${H-30}" stroke="#999" stroke-width="1"/>
@@ -3238,14 +3263,14 @@ function renderLifeTrajectory() {
       ${myPoints}
       <text x="42" y="${H-15}" font-size="8" fill="#999">0</text>
       <text x="${W-12}" y="${H-15}" font-size="8" fill="#999" text-anchor="end">${maxAge}</text>
-      <text x="${W/2}" y="${H-15}" font-size="8" fill="#999" text-anchor="middle">${isEn?'Age':'年齡'}</text>
+      <text x="${W/2}" y="${H-15}" font-size="8" fill="#999" text-anchor="middle">${_xl('年齡', 'Age')}</text>
       <g font-size="9" font-weight="600" transform="translate(${W-150}, 8)">
         <rect x="0" y="0" width="140" height="74" fill="white" stroke="#d8cdb8" rx="4"/>
         ${lines.map((L, i) => `<line x1="6" y1="${14 + i*15}" x2="20" y2="${14 + i*15}" stroke="${L.color}" stroke-width="2"/><text x="24" y="${17 + i*15}" fill="#5a4a3a">${_xl(L.zh, L.en)}</text>`).join('')}
-        <line x1="6" y1="${14 + 4*15}" x2="20" y2="${14 + 4*15}" stroke="#a16207" stroke-width="1.5" stroke-dasharray="4 2"/><text x="24" y="${17 + 4*15}" fill="#5a4a3a">${isEn?'Family BG':'家境'}</text>
+        <line x1="6" y1="${14 + 4*15}" x2="20" y2="${14 + 4*15}" stroke="#a16207" stroke-width="1.5" stroke-dasharray="4 2"/><text x="24" y="${17 + 4*15}" fill="#5a4a3a">${_xl('家境', 'Family BG')}</text>
       </g>
     </svg>
-    <p class="muted">${isEn?'Current values: ':'當前數值：'}🟢 ${isEn?'Health':'健康'} ${Math.round(life.stats.health)} · 🔵 ${isEn?'Education':'教育'} ${Math.round(life.stats.knowledge)} · 🟡 ${isEn?'Income':'收入'} PPP $${Math.round(life.stats.netAssets).toLocaleString()} · 🟣 ${isEn?'Relationship':'關係'} ${Math.round(life.stats.social)}</p>
+    <p class="muted">${_xl('當前數值：', 'Current values: ')}🟢 ${_xl('健康', 'Health')} ${Math.round(life.stats.health)} · 🔵 ${_xl('教育', 'Education')} ${Math.round(life.stats.knowledge)} · 🟡 ${_xl('收入', 'Income')} PPP $${Math.round(life.stats.netAssets).toLocaleString()} · 🟣 ${_xl('關係', 'Relationship')} ${Math.round(life.stats.social)}</p>
   `;
 }
 
@@ -3282,13 +3307,13 @@ function renderManualDecisions() {
   const financePast = (life.financeDecisions || []).filter(d => financeAges.includes(d.age));
   // 焦點按鈕永遠可用（玩家可主動選擇今年焦點）
   wrap.innerHTML = `
-    <h4>🎯 ${isEn ? 'Manual Decisions' : '手動決策'} <span class="muted">${isEn ? '(player chooses when to act)':'（由玩家主動選擇）'}</span></h4>
+    <h4>🎯 ${_xl('手動決策', 'Manual Decisions')} <span class="muted">${_xl('（由玩家主動選擇）', '(player chooses when to act)')}</span></h4>
     <div class="md-row">
-      <button id="mdFocusBtn" class="md-btn">🎯 ${isEn ? 'Choose this year\'s focus' : '設定本年焦點'} <span class="md-hint">${life.focus ? (isEn?'Now: ':'目前：')+life.focus : (isEn?'(not set)':'（未設定）')}</span></button>
-      ${financeAvail ? `<button id="mdFinanceBtn" class="md-btn">💰 ${isEn?'Make financial decision at age '+age:'決定 ' + age + ' 歲的財務規劃'}</button>` : financePast.length ? `<span class="md-hint">${isEn?'Financial decisions made: ':'已做的財務決策：'} ${financePast.map(d => d.age).join('、')}</span>` : ''}
-      <button id="mdQuickDecideBtn" class="md-btn md-btn-auto" title="${isEn ? 'Auto-apply: focus=work + finance=cheapest. Lets you watch a full life without manual input.' : '自動套：焦點→work / 財務→最便宜。可以放手看完整個人生。'}">⚡ ${isEn ? 'Quick-decide all (focus=work + cheapest)' : '快速決定（焦點→work、最便宜）'}</button>
-      <button id="mdMusicBtn" class="md-btn md-btn-music" title="${isEn ? 'Soft background music' : '輕柔的背景音樂'}">♪ ${isEn ? 'Background music' : '背景音樂'}</button>
-      <button id="mdSpendBtn" class="md-btn md-btn-spend" title="${isEn ? 'Family gifts · Lifestyle · Travel · Donate' : '聚餐·生活方式·旅行·捐款'}">💸 ${isEn ? 'Spend' : '花錢'}</button>
+      <button id="mdFocusBtn" class="md-btn">🎯 ${_xl('設定本年焦點', 'Choose this year\'s focus')} <span class="md-hint">${life.focus ? (_xl('目前：', 'Now: '))+life.focus : (_xl('（未設定）', '(not set)'))}</span></button>
+      ${financeAvail ? `<button id="mdFinanceBtn" class="md-btn">💰 ${isEn?'Make financial decision at age '+age:'決定 ' + age + ' 歲的財務規劃'}</button>` : financePast.length ? `<span class="md-hint">${_xl('已做的財務決策：', 'Financial decisions made: ')} ${financePast.map(d => d.age).join('、')}</span>` : ''}
+      <button id="mdQuickDecideBtn" class="md-btn md-btn-auto" title="${_xl('自動套：焦點→work / 財務→最便宜。可以放手看完整個人生。', 'Auto-apply: focus=work + finance=cheapest. Lets you watch a full life without manual input.')}">⚡ ${_xl('快速決定（焦點→work、最便宜）', 'Quick-decide all (focus=work + cheapest)')}</button>
+      <button id="mdMusicBtn" class="md-btn md-btn-music" title="${_xl('輕柔的背景音樂', 'Soft background music')}">♪ ${_xl('背景音樂', 'Background music')}</button>
+      <button id="mdSpendBtn" class="md-btn md-btn-spend" title="${_xl('聚餐·生活方式·旅行·捐款', 'Family gifts · Lifestyle · Travel · Donate')}">💸 ${_xl('花錢', 'Spend')}</button>
     </div>
   `;
   // wire
@@ -3300,7 +3325,7 @@ function renderManualDecisions() {
     if (!STATE.life) return;
     STATE.life.focus = 'work';
     applyFocusEffects('work');
-    toast(isEn ? '⚡ Auto: focus=work, finance→cheapest. Speeding up ×4.' : '⚡ 自動：焦點→work、財務→最便宜。加速 ×4 中。');
+    toast(_xl('⚡ 自動：焦點→work、財務→最便宜。加速 ×4 中。', '⚡ Auto: focus=work, finance→cheapest. Speeding up ×4.'));
     // 加快速度，讓玩家「放手看完」
     STATE.speed = 4;
     STATE.autoDecide = true;
@@ -3309,7 +3334,7 @@ function renderManualDecisions() {
   });
   // v5.19：「♪ 背景音樂」= 沒有音樂資源，顯示 toast
   $('#mdMusicBtn')?.addEventListener('click', () => {
-    toast(isEn ? '♪ Music feature coming soon' : '♪ 音樂功能即將推出');
+    toast(_xl('♪ 音樂功能即將推出', '♪ Music feature coming soon'));
   });
 }
 
@@ -3349,10 +3374,10 @@ function bindStateInfoButton() {
     const isEn = LANG === 'en';
     if (isHidden) {
       panel.innerHTML = `
-        <div class="si-row"><span class="si-k">${isEn ? 'Health' : '健康'}</span><span class="si-v">${isEn ? 'Starts at 100, then eases each year toward an age-based ceiling (100 falling 0.55 a year from 18, floored at 40). Drops faster after 60. Health choices push it up or down.' : '出生時 100，之後每年往「該年齡的上限」靠（18 歲後每年降 0.55，最低 40）。60 歲後掉得更快。養生的選擇可以把它往上拉，也可以往下壓。'}</span></div>
-        <div class="si-row"><span class="si-k">${isEn ? 'Knowledge' : '知識'}</span><span class="si-v">${isEn ? 'Education level + life experience. Self-study focus +3, secondary school +0.5/yr.' : '學歷 + 人生經歷。每年自我進修 +3、升上國中 +0.5。'}</span></div>
-        <div class="si-row"><span class="si-k">${isEn ? 'Happiness' : '幸福'}</span><span class="si-v">${isEn ? 'Your choices push it directly, but each year it drifts 1.8% toward a baseline set by your circumstances: 45, plus health (×0.35), relationships (×0.12), +8 working / +5 studying / +3 retired / −2 jobless, and −8 if you owe money. A good choice therefore keeps pulling for years.' : '你的選擇會直接推動它，但每年會以 1.8% 慢慢回到「當下處境決定的水位」：基準 45，加上健康（×0.35）、人際（×0.12），在職 +8／就學 +5／退休 +3／無業 −2，負債再 −8。所以一個好選擇可以維持很多年。'}</span></div>
-        <div class="si-row"><span class="si-k">${isEn ? 'Social' : '人際'}</span><span class="si-v">${isEn ? 'Starts at 60, and your choices move it most — helping relatives, hosting friends, keeping in touch, sharing good news (+1 to +8); moving away or taking the cash instead (−1 to −3). Family focus +4, and an affordable yearly social expense adds +4.' : '起始 60，主要由你的選擇推動 —— 幫忙親戚、招待朋友、保持聯絡、分喜訊（+1～+8）；搬家離開或只拿錢（−1～−3）。年度焦點選「家人」+4，每年負擔得起的社交支出再 +4。'}</span></div>
+        <div class="si-row"><span class="si-k">${_xl('健康', 'Health')}</span><span class="si-v">${_xl('出生時 100，之後每年往「該年齡的上限」靠（18 歲後每年降 0.55，最低 40）。60 歲後掉得更快。養生的選擇可以把它往上拉，也可以往下壓。', 'Starts at 100, then eases each year toward an age-based ceiling (100 falling 0.55 a year from 18, floored at 40). Drops faster after 60. Health choices push it up or down.')}</span></div>
+        <div class="si-row"><span class="si-k">${_xl('知識', 'Knowledge')}</span><span class="si-v">${_xl('學歷 + 人生經歷。每年自我進修 +3、升上國中 +0.5。', 'Education level + life experience. Self-study focus +3, secondary school +0.5/yr.')}</span></div>
+        <div class="si-row"><span class="si-k">${_xl('幸福', 'Happiness')}</span><span class="si-v">${_xl('你的選擇會直接推動它，但每年會以 1.8% 慢慢回到「當下處境決定的水位」：基準 45，加上健康（×0.35）、人際（×0.12），在職 +8／就學 +5／退休 +3／無業 −2，負債再 −8。所以一個好選擇可以維持很多年。', 'Your choices push it directly, but each year it drifts 1.8% toward a baseline set by your circumstances: 45, plus health (×0.35), relationships (×0.12), +8 working / +5 studying / +3 retired / −2 jobless, and −8 if you owe money. A good choice therefore keeps pulling for years.')}</span></div>
+        <div class="si-row"><span class="si-k">${_xl('人際', 'Social')}</span><span class="si-v">${_xl('起始 60，主要由你的選擇推動 —— 幫忙親戚、招待朋友、保持聯絡、分喜訊（+1～+8）；搬家離開或只拿錢（−1～−3）。年度焦點選「家人」+4，每年負擔得起的社交支出再 +4。', 'Starts at 60, and your choices move it most — helping relatives, hosting friends, keeping in touch, sharing good news (+1 to +8); moving away or taking the cash instead (−1 to −3). Family focus +4, and an affordable yearly social expense adds +4.')}</span></div>
       `;
       panel.removeAttribute('hidden');
       btn.textContent = 'ℹ️✕';
@@ -3373,25 +3398,25 @@ function renderLifeFamilyDetail() {
   const fd = life.fatherDetail || {};
   const md = life.motherDetail || {};
   wrap.innerHTML = `
-    <h4>${isEn ? '👪 Family Background' : '👪 出身家庭'}</h4>
+    <h4>${_xl('👪 出身家庭', '👪 Family Background')}</h4>
     <div class="fd-row">
       <div class="fd-cell">
-        <div class="fd-role">${isEn ? 'Father' : '父親'} · ${life.stats.incomeQuartile ? `Q${life.stats.incomeQuartile}` : 'Q?'}</div>
+        <div class="fd-role">${_xl('父親', 'Father')} · ${life.stats.incomeQuartile ? `Q${life.stats.incomeQuartile}` : 'Q?'}</div>
         <div class="fd-name">${isEn ? (life.family?.parents?.find(p=>p.sex==='M')?.name || '—') : (life.family?.parents?.find(p=>p.sex==='M')?.name || '—')}</div>
-        <div class="fd-detail">${fd.age ? (fd.age + (isEn ? ' years old' : '歲')) : ''} ${fd.job ? '· ' + fd.job : ''}</div>
+        <div class="fd-detail">${fd.age ? (fd.age + (_xl('歲', ' years old'))) : ''} ${fd.job ? '· ' + fd.job : ''}</div>
       </div>
       <div class="fd-cell">
-        <div class="fd-role">${isEn ? 'Mother' : '母親'}</div>
+        <div class="fd-role">${_xl('母親', 'Mother')}</div>
         <div class="fd-name">${life.family?.parents?.find(p=>p.sex==='F')?.name || '—'}</div>
-        <div class="fd-detail">${md.age ? (md.age + (isEn ? ' years old' : '歲')) : ''} ${md.job ? '· ' + md.job : ''}</div>
+        <div class="fd-detail">${md.age ? (md.age + (_xl('歲', ' years old'))) : ''} ${md.job ? '· ' + md.job : ''}</div>
       </div>
       <div class="fd-cell">
-        <div class="fd-role">${isEn ? 'Religion' : '宗教'} · ${isEn ? 'Place' : '出生地'}</div>
+        <div class="fd-role">${_xl('宗教', 'Religion')} · ${_xl('出生地', 'Place')}</div>
         <div class="fd-name" style="font-size:13px;font-weight:500">${life.stats.religion || '—'}</div>
-        <div class="fd-detail">${life.stats.birthPlaceType === 'rural' ? (isEn ? '🌾 Rural' : '🌾 鄉村') : (isEn ? '🏙️ Urban' : '🏙️ 城市')}</div>
+        <div class="fd-detail">${life.stats.birthPlaceType === 'rural' ? (_xl('🌾 鄉村', '🌾 Rural')) : (_xl('🏙️ 城市', '🏙️ Urban'))}</div>
       </div>
     </div>
-    ${life.family?.siblings?.length ? `<div class="fd-sib"><strong>${isEn ? 'Siblings' : '兄弟姊妹'}：</strong> ${life.family.siblings.map(s => {
+    ${life.family?.siblings?.length ? `<div class="fd-sib"><strong>${_xl('兄弟姊妹', 'Siblings')}：</strong> ${life.family.siblings.map(s => {
       const sAge = life.age - (s.birth?.year || life.year);
       return `${s.name}（${sAge}${t('unit.years')}）`;
     }).join('、')}</div>` : ''}
@@ -3422,26 +3447,24 @@ function renderLifeCompanions() {
   if (sceneEl) {
     const c = STATE.life.countryData;
     const loc = c ? localize(c) : { name: STATE.life.country };
-    const place = STATE.life.stats.birthPlaceType === 'rural' ? (isEn ? 'rural' : '鄉村') : (isEn ? 'urban' : '城市');
+    const place = STATE.life.stats.birthPlaceType === 'rural' ? (_xl('鄉村', 'rural')) : (_xl('城市', 'urban'));
     const sibCount = (STATE.life.family?.siblings || []).length;
-    const housing = isEn ? 'small house' : '鄉間小屋';
-    const familyText = isEn
-      ? `${loc.name} ${place} · ${housing} · lives with parents and ${sibCount} siblings`
-      : `${loc.name} ${place} · ${housing} · 與父母和兄弟姊妹${sibCount}人同住`;
-    sceneEl.innerHTML = `<h4>🏡 ${isEn?'Where you live':'你住的地方'}</h4><p class="muted">${familyText}</p>`;
+    const housing = _xl('鄉間小屋', 'small house');
+    const familyText = _xl(`${loc.name} ${place} · ${housing} · 與父母和兄弟姊妹${sibCount}人同住`, `${loc.name} ${place} · ${housing} · lives with parents and ${sibCount} siblings`);
+    sceneEl.innerHTML = `<h4>🏡 ${_xl('你住的地方', 'Where you live')}</h4><p class="muted">${familyText}</p>`;
   }
   wrap.innerHTML = `
-    <h4>${isEn ? '👶 Born in the same second' : '👶 在同一秒出生的人們'} <span class="muted">(${isEn ? 'growing up together' : '一起長大'})</span></h4>
+    <h4>${_xl('👶 在同一秒出生的人們', '👶 Born in the same second')} <span class="muted">(${_xl('一起長大', 'growing up together')})</span></h4>
     <div class="lc-grid">${STATE.life.companions.map(c => `
       <div class="lc-cell">
         <div class="lc-flag">${c.flag}</div>
         <div class="lc-name">${c.name}</div>
-        <div class="lc-meta">${c.countryData?.name_zh || c.country} · ${c.sex === 'M' ? (isEn?'♂':'男') : (isEn?'♀':'女')} · ${c.lifeExpectancy ? c.lifeExpectancy + t('unit.years') : ''}</div>
+        <div class="lc-meta">${c.countryData?.name_zh || c.country} · ${c.sex === 'M' ? (_xl('男', '♂')) : (_xl('女', '♀'))} · ${c.lifeExpectancy ? c.lifeExpectancy + t('unit.years') : ''}</div>
         <div class="lc-bg">
-          <div class="lc-bg-row"><span class="lc-bg-k">${isEn ? 'Father' : '父'}</span><span class="lc-bg-v">${c.parentJobFather || '—'}</span></div>
-          <div class="lc-bg-row"><span class="lc-bg-k">${isEn ? 'Mother' : '母'}</span><span class="lc-bg-v">${c.parentJobMother || '—'}</span></div>
-          <div class="lc-bg-row"><span class="lc-bg-k">${isEn ? 'Family' : '家境'}</span><span class="lc-bg-v lc-q">${quartileLabel(c.incomeQuartile, isEn)}</span></div>
-          <div class="lc-bg-row"><span class="lc-bg-k">${isEn ? 'Born in' : '出生地'}</span><span class="lc-bg-v">${c.birthPlaceType === 'rural' ? (isEn ? '🌾 Rural' : '🌾 鄉村') : (isEn ? '🏙️ Urban' : '🏙️ 城市')}</span></div>
+          <div class="lc-bg-row"><span class="lc-bg-k">${_xl('父', 'Father')}</span><span class="lc-bg-v">${c.parentJobFather || '—'}</span></div>
+          <div class="lc-bg-row"><span class="lc-bg-k">${_xl('母', 'Mother')}</span><span class="lc-bg-v">${c.parentJobMother || '—'}</span></div>
+          <div class="lc-bg-row"><span class="lc-bg-k">${_xl('家境', 'Family')}</span><span class="lc-bg-v lc-q">${quartileLabel(c.incomeQuartile, isEn)}</span></div>
+          <div class="lc-bg-row"><span class="lc-bg-k">${_xl('出生地', 'Born in')}</span><span class="lc-bg-v">${c.birthPlaceType === 'rural' ? (_xl('🌾 鄉村', '🌾 Rural')) : (_xl('🏙️ 城市', '🏙️ Urban'))}</span></div>
         </div>
       </div>
     `).join('')}</div>
@@ -3463,13 +3486,13 @@ function renderActualVsRandom() {
     { key: 'le',   labelZh: '平均壽命',      labelEn: 'Life expectancy', fmt: v => (v ? (v + ' ' + t('unit.years')) : '—'), realVal: real.le, randVal: random.le },
     { key: 'u5',   labelZh: '5 歲前死亡機率', labelEn: 'Under-5 mortality', fmt: v => v != null ? ((v / 1000) * 100).toFixed(2) + '%' : '—', realVal: real.u5, randVal: random.u5 },
     { key: 'ppp',  labelZh: '人均 GDP (PPP)', labelEn: 'GDP per capita (PPP)', fmt: v => v != null ? ('$' + Math.round(v).toLocaleString()) : '—', realVal: real.ppp, randVal: random.ppp },
-    { key: 'eys',  labelZh: '預期受教育年數',  labelEn: 'Expected school years', fmt: v => v != null ? (v.toFixed(1) + ' ' + (isEn ? 'yrs' : '年')) : '—', realVal: real.eys, randVal: random.eys },
+    { key: 'eys',  labelZh: '預期受教育年數',  labelEn: 'Expected school years', fmt: v => v != null ? (v.toFixed(1) + ' ' + (_xl('年', 'yrs'))) : '—', realVal: real.eys, randVal: random.eys },
   ];
   wrap.innerHTML = `
-    <h4>${isEn ? '🧭 If you were born now' : '🧭 如果你現在出生'} <span class="muted">${isEn ? 'vs your random country' : 'vs 你的隨機出生地'}</span></h4>
+    <h4>${_xl('🧭 如果你現在出生', '🧭 If you were born now')} <span class="muted">${_xl('vs 你的隨機出生地', 'vs your random country')}</span></h4>
     <table class="ar-table">
       <thead>
-        <tr><th></th><th class="ar-you">${real.flag} ${isEn ? real.name_en : real.name_zh} <span class="muted">${isEn?'(by your browser language)':'（依瀏覽器語言推測）'}</span></th><th class="ar-rand">${random.flag} ${isEn ? random.name_en : random.name_zh} <span class="muted">${isEn?'(random draw)':'（隨機）'}</span></th></tr>
+        <tr><th></th><th class="ar-you">${real.flag} ${isEn ? real.name_en : real.name_zh} <span class="muted">${_xl('（依瀏覽器語言推測）', '(by your browser language)')}</span></th><th class="ar-rand">${random.flag} ${isEn ? random.name_en : random.name_zh} <span class="muted">${_xl('（隨機）', '(random draw)')}</span></th></tr>
       </thead>
       <tbody>${rows.map(r => {
         const realV = r.fmt(r.realVal);
@@ -3484,7 +3507,7 @@ function renderActualVsRandom() {
         return `<tr><td class="ar-k">${isEn ? r.labelEn : r.labelZh}${winner ? ' ' + winner : ''}</td><td class="ar-v">${realV}</td><td class="ar-v">${randV}</td></tr>`;
       }).join('')}</tbody>
     </table>
-    <p class="muted ar-note">${isEn ? '🟢 = better than random · 🔴 = worse · ⚪ = same. ' : '🟢 = 比隨機好 · 🔴 = 比隨機差 · ⚪ = 一樣。'}</p>
+    <p class="muted ar-note">${_xl('🟢 = 比隨機好 · 🔴 = 比隨機差 · ⚪ = 一樣。', '🟢 = better than random · 🔴 = worse · ⚪ = same. ')}</p>
   `;
 }
 
@@ -3518,38 +3541,38 @@ function renderCountryStats() {
   const sex = STATE.life.sex;
   // 16 個統計指標（依國家資料）
   const rows = [
-    [isEn?'Annual births':'每年出生人數', Math.round(c.births || 240000).toLocaleString() + (isEn?' people':'人')],
+    [_xl('每年出生人數', 'Annual births'), Math.round(c.births || 240000).toLocaleString() + (_xl('人', ' people'))],
     // v5.97：c.pop 的單位是「千人」，不是「人」。
 // 證據：172 國的 c.pop 加總 = 8,078,638，若視為千人剛好是 80.8 億（世界人口）；
 // 若視為「人」則只有 0.0081 億。台灣 c.pop = 23317 = 2331.7 萬人。
 // 舊碼除以 1,000,000，於是台灣顯示「0.0 百萬人」、印度「1.4 百萬人」（實際 1438.1）。
 // 另外預設值 5000000 也跟錯單位，應該是 5000（千人）。
-[isEn?'Population':'人口', ((c.pop || 5000)/1000).toFixed(1) + (isEn?'M people':'百萬人')],
-    [isEn?'Life expectancy F/M':'平均壽命 女/男', ((c.le || 70) + (isEn?'/':'/') + Math.max(0,(c.le||70) - 4)) + t('unit.years')],
-    [isEn?'Under-5 mortality':'5歲以下死亡率', ((c.u5 || 25) / 1000 * 100).toFixed(1) + '%'],
-    [isEn?'GDP per capita (PPP)':'人均GDP（PPP）', '$' + Math.round(c.ppp || 10000).toLocaleString()],
-    [isEn?'Gini coefficient':'所得吉尼係數', (c.gi || 0.35).toFixed(2)],
-    [isEn?'Urban population %':'都市人口比例', Math.round(c.urb || 50) + '%'],
-    [isEn?'Agricultural workforce':'從事農業', Math.round(c.agr || 30) + '%'],
-    [isEn?'Expected education years':'預期受教育年數', (c.eys || 12).toFixed(1) + (isEn?' yrs':'年')],
-    [isEn?'Higher education rate':'高等教育粗在學率', Math.round(c.ter || 30) + '%'],
-    [isEn?'Internet usage':'網路使用率', Math.round(c.net || 60) + '%'],
-    [isEn?'Total fertility rate':'總生育率', (c.tfr || 2).toFixed(2) + (isEn?' children':'人')],
-    [isEn?'Maternal mortality':'孕產婦死亡率（每10萬活產）', Math.round(c.mmr || 50)],
-    [isEn?'HIV prevalence 15-49':'HIV 盛行率（15-49歲）', (c.hiv || 1).toFixed(2) + '%'],
-    [isEn?'Homicide rate':'兇殺率（每10萬人）', Math.round(c.hom || 5) + (isEn?'/100k':'/10萬')],
-    [isEn?'Traffic fatality':'交通事故死亡（每10萬人）', Math.round(c.road || 15) + (isEn?'/100k':'/10萬')],
-    [isEn?'Tobacco use M/F':'菸草使用 男/女', (Math.round(c.sm * 0.8)) + '% / ' + (Math.round(c.sm * 0.1)) + '%'],
-    [isEn?'Out-of-pocket health':'醫療費用自付比例', Math.round(c.oop || 30) + '%'],
-    [isEn?'Child marriage (F)':'18歲前結婚（女性）', Math.round(c.cm || 20) + '%'],
-    [isEn?'Life satisfaction (0-10)':'生活滿意度（0-10）', (c.ls || 5.5).toFixed(2)]
+[_xl('人口', 'Population'), ((c.pop || 5000)/1000).toFixed(1) + (_xl('百萬人', 'M people'))],
+    [_xl('平均壽命 女/男', 'Life expectancy F/M'), ((c.le || 70) + (isEn?'/':'/') + Math.max(0,(c.le||70) - 4)) + t('unit.years')],
+    [_xl('5歲以下死亡率', 'Under-5 mortality'), ((c.u5 || 25) / 1000 * 100).toFixed(1) + '%'],
+    [_xl('人均GDP（PPP）', 'GDP per capita (PPP)'), '$' + Math.round(c.ppp || 10000).toLocaleString()],
+    [_xl('所得吉尼係數', 'Gini coefficient'), (c.gi || 0.35).toFixed(2)],
+    [_xl('都市人口比例', 'Urban population %'), Math.round(c.urb || 50) + '%'],
+    [_xl('從事農業', 'Agricultural workforce'), Math.round(c.agr || 30) + '%'],
+    [_xl('預期受教育年數', 'Expected education years'), (c.eys || 12).toFixed(1) + (_xl('年', ' yrs'))],
+    [_xl('高等教育粗在學率', 'Higher education rate'), Math.round(c.ter || 30) + '%'],
+    [_xl('網路使用率', 'Internet usage'), Math.round(c.net || 60) + '%'],
+    [_xl('總生育率', 'Total fertility rate'), (c.tfr || 2).toFixed(2) + (_xl('人', ' children'))],
+    [_xl('孕產婦死亡率（每10萬活產）', 'Maternal mortality'), Math.round(c.mmr || 50)],
+    [_xl('HIV 盛行率（15-49歲）', 'HIV prevalence 15-49'), (c.hiv || 1).toFixed(2) + '%'],
+    [_xl('兇殺率（每10萬人）', 'Homicide rate'), Math.round(c.hom || 5) + (_xl('/10萬', '/100k'))],
+    [_xl('交通事故死亡（每10萬人）', 'Traffic fatality'), Math.round(c.road || 15) + (_xl('/10萬', '/100k'))],
+    [_xl('菸草使用 男/女', 'Tobacco use M/F'), (Math.round(c.sm * 0.8)) + '% / ' + (Math.round(c.sm * 0.1)) + '%'],
+    [_xl('醫療費用自付比例', 'Out-of-pocket health'), Math.round(c.oop || 30) + '%'],
+    [_xl('18歲前結婚（女性）', 'Child marriage (F)'), Math.round(c.cm || 20) + '%'],
+    [_xl('生活滿意度（0-10）', 'Life satisfaction (0-10)'), (c.ls || 5.5).toFixed(2)]
   ];
   wrap.innerHTML = `
-    <h4>🌍 ${c.flag} ${isEn ? c.name_en : c.name_zh} <span class="muted">(${isEn?'20 key stats':'20 個關鍵統計'})</span></h4>
+    <h4>🌍 ${c.flag} ${isEn ? c.name_en : c.name_zh} <span class="muted">(${_xl('20 個關鍵統計', '20 key stats')})</span></h4>
     <table class="cs-table">
       <tbody>${rows.map(r => `<tr><td class="cs-k">${r[0]}</td><td class="cs-v">${r[1]}</td></tr>`).join('')}</tbody>
     </table>
-    <p class="muted cs-source">${isEn?'Sources: UN WPP 2024, WB WDI, WHO, UNESCO UIS, UNDP HDR, ILO, UNAIDS, UNODC, UNICEF, World Happiness Report 2024':'資料來源：聯合國《世界人口展望2024》、世界銀行WDI、WHO、UNESCO UIS、UNDP HDR、ILO、UNAIDS、UNODC、UNICEF、生活滿意度報告2024'}</p>
+    <p class="muted cs-source">${_xl('資料來源：聯合國《世界人口展望2024》、世界銀行WDI、WHO、UNESCO UIS、UNDP HDR、ILO、UNAIDS、UNODC、UNICEF、生活滿意度報告2024', 'Sources: UN WPP 2024, WB WDI, WHO, UNESCO UIS, UNDP HDR, ILO, UNAIDS, UNODC, UNICEF, World Happiness Report 2024')}</p>
   `;
   // v5.11：存活曲線圖
   renderSurvivalCurve();
@@ -3602,12 +3625,12 @@ function renderSurvivalCurve() {
   const myPos = proj(myAge, mySurv);
   const avgPoint = proj(lifeExp, 0.5);
   wrap.innerHTML = `
-    <h4>📉 ${isEn ? 'Survival curve' : '存活曲線'} <span class="muted">${isEn ? '% still alive at each age' : '同年出生的人當中仍存活的比例'}</span></h4>
+    <h4>📉 ${_xl('存活曲線', 'Survival curve')} <span class="muted">${_xl('同年出生的人當中仍存活的比例', '% still alive at each age')}</span></h4>
     <svg viewBox="0 0 ${W} ${H}" class="survival-svg" style="width:100%;height:auto;">
       <rect x="0" y="0" width="${W}" height="${H}" fill="#faf7f0"/>
       <line x1="40" y1="${H-30}" x2="${W-10}" y2="${H-30}" stroke="#999" stroke-width="1"/>
       <line x1="40" y1="20" x2="40" y2="${H-30}" stroke="#999" stroke-width="1"/>
-      <text x="${W-12}" y="${H-32}" font-size="9" fill="#666" text-anchor="end">${isEn ? 'Age':'年齡'}</text>
+      <text x="${W-12}" y="${H-32}" font-size="9" fill="#666" text-anchor="end">${_xl('年齡', 'Age')}</text>
       <text x="32" y="22" font-size="9" fill="#666" text-anchor="end">100%</text>
       <text x="32" y="${H-32}" font-size="9" fill="#666" text-anchor="end">0%</text>
       <text x="42" y="${H-15}" font-size="8" fill="#999">0</text>
@@ -3622,7 +3645,7 @@ function renderSurvivalCurve() {
         <line x1="${W-122}" y1="16" x2="${W-110}" y2="16" stroke="var(--accent)" stroke-width="2"/>
         <text x="${W-105}" y="19">${c.flag} ${isEn ? c.name_en : c.name_zh}</text>
         <line x1="${W-122}" y1="28" x2="${W-110}" y2="28" stroke="#999" stroke-width="1.5" stroke-dasharray="3 2"/>
-        <text x="${W-105}" y="31">🌐 ${isEn?'World avg':'世界平均'}</text>
+        <text x="${W-105}" y="31">🌐 ${_xl('世界平均', 'World avg')}</text>
       </g>
     </svg>
     <p class="muted">${isEn?'Outer box = average life expectancy in this country':'外框格 = '+c.flag+(isEn?c.name_en:c.name_zh)+' 平均壽命 '+lifeExp+t('unit.years')}</p>
@@ -3645,10 +3668,10 @@ function renderIdentityRecord() {
   const dd = String(Math.floor(Math.random()*28)+1).padStart(2, '0');
   const exp = String((year + 10) % 100).padStart(2, '0') + String(Math.floor(Math.random()*12)+1).padStart(2, '0') + String(Math.floor(Math.random()*28)+1).padStart(2, '0');
   wrap.innerHTML = `
-    <h4>🛂 ${isEn ? 'Identity Record' : '身分紀錄'} <span class="muted">${life.country || ''} · ${life.regNumber || ''}</span></h4>
+    <h4>🛂 ${_xl('身分紀錄', 'Identity Record')} <span class="muted">${life.country || ''} · ${life.regNumber || ''}</span></h4>
     <pre class="mrz-line">${mrz}${life.name?.full_en?.toUpperCase().replace(/[^A-Z]/g,'').padEnd(20,'<').slice(0,20) || ''}</pre>
     <pre class="mrz-line">${year}${mm}${dd}${life.sex}${exp}${life.country || 'XXX'}</pre>
-    <div class="ir-meta">${surname} ${givenName} · ${life.sex === 'M' ? (isEn?'Male':'男') : (isEn?'Female':'女')} · ${year}/${life.regNumber?.split('-').pop() || ''}</div>
+    <div class="ir-meta">${surname} ${givenName} · ${life.sex === 'M' ? (_xl('男', 'Male')) : (_xl('女', 'Female'))} · ${year}/${life.regNumber?.split('-').pop() || ''}</div>
   `;
 }
 
@@ -3665,34 +3688,34 @@ function renderFamilySummary() {
   if (father && mother) parts.push(`👨 ${father.name} · 👩 ${mother.name}`);
   else if (father) parts.push(`👨 ${father.name}`);
   else if (mother) parts.push(`👩 ${mother.name}`);
-  else parts.push(`<span class="fam-orphan">${LANG==='en'?'🕯️ Orphan':'🕯️ 孤兒'}</span>`);
+  else parts.push(`<span class="fam-orphan">${_xl('🕯️ 孤兒', '🕯️ Orphan')}</span>`);
   // 手足
   if (f.siblings && f.siblings.length) {
     const liveSib = f.siblings.filter(s => !s.death?.year);
     const deadSib = f.siblings.filter(s => s.death?.year);
-    let sibText = `👫 ${f.siblings.length} ${LANG==='en'?'siblings':'手足'}`;
-    if (liveSib.length < f.siblings.length) sibText += `（${liveSib.length} ${LANG==='en'?'alive':'存'}，${deadSib.length} †）`;
+    let sibText = `👫 ${f.siblings.length} ${_xl('手足', 'siblings')}`;
+    if (liveSib.length < f.siblings.length) sibText += `（${liveSib.length} ${_xl('存', 'alive')}，${deadSib.length} †）`;
     parts.push(sibText);
   }
   // 祖父母
   if (f.grandparents && f.grandparents.length) {
-    parts.push(`👴👵 ${f.grandparents.length} ${LANG==='en'?'grandparents':'祖父母'}`);
+    parts.push(`👴👵 ${f.grandparents.length} ${_xl('祖父母', 'grandparents')}`);
   }
   // 伴侶
   if (f.partner) parts.push(`💍 ${f.partner.name}`);
   // 子女
   if (f.kids && f.kids.length) {
     const deadKids = f.kids.filter(k => k.death?.year);
-    let kidText = `👶 ${f.kids.length} ${LANG==='en'?'children':'子女'}`;
+    let kidText = `👶 ${f.kids.length} ${_xl('子女', 'children')}`;
     if (deadKids.length) kidText += `（${deadKids.length} †）`;
     parts.push(kidText);
   }
   // 收養/寄養
-  if (f.fosterCare === 'adopt') parts.push(`<span class="fam-flag">🧩 ${LANG==='en'?'Adopted':'收養家庭'}</span>`);
-  else if (f.fosterCare === 'foster') parts.push(`<span class="fam-flag">🏠 ${LANG==='en'?'Foster':'寄養家庭'}</span>`);
+  if (f.fosterCare === 'adopt') parts.push(`<span class="fam-flag">🧩 ${_xl('收養家庭', 'Adopted')}</span>`);
+  else if (f.fosterCare === 'foster') parts.push(`<span class="fam-flag">🏠 ${_xl('寄養家庭', 'Foster')}</span>`);
   // 跨國遷徙
   if (STATE.life.birthOrigin) {
-    parts.push(`<span class="fam-flag">${STATE.life.birthOrigin.flag}→${c.flag} ${LANG==='en'?'migrated':'遷徙'}</span>`);
+    parts.push(`<span class="fam-flag">${STATE.life.birthOrigin.flag}→${c.flag} ${_xl('遷徙', 'migrated')}</span>`);
   }
   wrap.innerHTML = parts.map(p => `<div class="fam-row">${p}</div>`).join('');
   if (goBtn) {
@@ -3929,7 +3952,7 @@ function renderShelf() {
   const manageWrap = document.createElement('div');
   manageWrap.className = 'shelf-manage';
   manageWrap.style.cssText = 'grid-column:1/-1;text-align:center;margin-top:12px;';
-  manageWrap.innerHTML = `<button class="ghost" id="manageRecordsBtn">📋 ${LANG==='en'?'Manage records':'整理紀錄'}</button> <button class="ghost" id="toggleMusicBtn" style="margin-left:6px;">♪ ${LANG==='en'?'Music':'音樂'}</button>`;
+  manageWrap.innerHTML = `<button class="ghost" id="manageRecordsBtn">📋 ${_xl('整理紀錄', 'Manage records')}</button> <button class="ghost" id="toggleMusicBtn" style="margin-left:6px;">♪ ${_xl('音樂', 'Music')}</button>`;
   shelf.appendChild(manageWrap);
   $('#manageRecordsBtn')?.addEventListener('click', showManageRecordsModal);
   $('#toggleMusicBtn')?.addEventListener('click', toggleBackgroundMusic);
@@ -3951,8 +3974,8 @@ function showManageRecordsModal() {
   modal.innerHTML = `
     <div class="life-modal-card" style="max-width:520px;">
       <button class="lm-close" onclick="document.getElementById('manageModal').remove()">×</button>
-      <h2 class="lm-title">📋 ${isEn ? 'Manage Records' : '紀錄整理'}</h2>
-      <p class="muted" style="font-size:12px;">${isEn ? 'Show or delete each past life.':'可逐本檢視或刪除過去的人生。'}</p>
+      <h2 class="lm-title">📋 ${_xl('紀錄整理', 'Manage Records')}</h2>
+      <p class="muted" style="font-size:12px;">${_xl('可逐本檢視或刪除過去的人生。', 'Show or delete each past life.')}</p>
       <div class="manage-list">
         ${lives.length === 0 ? '<span class="muted">—</span>' : lives.map((l, i) => `
           <div class="manage-row">
@@ -3961,13 +3984,13 @@ function showManageRecordsModal() {
               <span class="muted">${l.year || '?'} – ${l.year + l.yearOffset} · ${l.age}${t('unit.years')} · ${l.cause || ''}</span>
             </div>
             <div class="manage-actions">
-              <button class="ghost" data-act="show" data-i="${i}">${isEn?'Show':'檢視'}</button>
+              <button class="ghost" data-act="show" data-i="${i}">${_xl('檢視', 'Show')}</button>
               <button class="ghost" data-act="del" data-i="${i}">🗑️</button>
             </div>
           </div>
         `).join('')}
       </div>
-      ${lives.length > 0 ? `<button class="ghost" id="manageClearAll" style="margin-top:8px;">🗑️ ${isEn?'Delete all':'全部刪除'}</button>` : ''}
+      ${lives.length > 0 ? `<button class="ghost" id="manageClearAll" style="margin-top:8px;">🗑️ ${_xl('全部刪除', 'Delete all')}</button>` : ''}
     </div>
   `;
   document.body.appendChild(modal);
@@ -3990,7 +4013,7 @@ function showManageRecordsModal() {
       if (!target || idx < 0) {
         modal.remove();
         renderShelf();
-        toast(isEn ? 'This record has already been deleted' : '這段紀錄已經被刪除了');
+        toast(_xl('這段紀錄已經被刪除了', 'This record has already been deleted'));
         return;
       }
       if (act === 'show') showLifeModal(ls[idx]);
@@ -3999,16 +4022,16 @@ function showManageRecordsModal() {
         localStorage.setItem(STORAGE_KEY + ':past', JSON.stringify(ls));
         modal.remove();
         renderShelf();
-        toast(isEn ? 'Life deleted' : '已刪除');
+        toast(_xl('已刪除', 'Life deleted'));
       }
     });
   });
   $('#manageClearAll')?.addEventListener('click', () => {
-    if (confirm(LANG==='en' ? 'Delete all past lives?' : '刪除所有過去的人生？')) {
+    if (confirm(_xl('刪除所有過去的人生？', 'Delete all past lives?'))) {
       localStorage.setItem(STORAGE_KEY + ':past', '[]');
       modal.remove();
       renderShelf();
-      toast(LANG==='en' ? 'All deleted' : '已全部刪除');
+      toast(_xl('已全部刪除', 'All deleted'));
     }
   });
 }
@@ -4028,12 +4051,12 @@ function toggleBackgroundMusic() {
       osc.connect(gain).connect(ctx.destination);
       osc.start();
       bgMusic = { ctx, osc, gain };
-      toast(isEn ? '♪ Music on' : '♪ 音樂已開啟');
+      toast(_xl('♪ 音樂已開啟', '♪ Music on'));
     } catch (e) { toast('Audio not supported'); }
   } else {
     try { bgMusic.osc.stop(); bgMusic.ctx.close(); } catch (e) {}
     bgMusic = null;
-    toast(LANG === 'en' ? '♪ Music off' : '♪ 音樂已關閉');
+    toast(_xl('♪ 音樂已關閉', '♪ Music off'));
   }
 }
 
@@ -4068,16 +4091,16 @@ function renderShelfWorldMap(lives) {
     // 主圓點：依去過次數調整大小
     const r = 4 + Math.min(stat.count * 2, 12);
     const circle = svgEl('circle', { cx: x, cy: y, r, fill: 'var(--accent)', stroke: 'white', 'stroke-width': 1, opacity: 0.85 }, svg);
-    circle.addEventListener('mouseenter', e => showMapTooltip(e, `${flag} ${c?.name_zh || iso}<br>${LANG==='en'?'Lived':'活過'} ${stat.count} ${LANG==='en'?'lives':'次'}, ${LANG==='en'?'avg':'平均'} ${avgAge} ${t('unit.years')}`));
+    circle.addEventListener('mouseenter', e => showMapTooltip(e, `${flag} ${c?.name_zh || iso}<br>${_xl('活過', 'Lived')} ${stat.count} ${_xl('次', 'lives')}, ${_xl('平均', 'avg')} ${avgAge} ${t('unit.years')}`));
     circle.addEventListener('mouseleave', hideMapTooltip);
     // 國旗 emoji 標記
     const flagText = svgEl('text', { x: x, y: y - r - 4, 'font-size': 12, 'text-anchor': 'middle' }, svg);
     flagText.textContent = flag;
-    tooltipLines.push(`${flag} ${c?.name_zh || iso}: ${stat.count} ${LANG==='en'?'times':'次'}`);
+    tooltipLines.push(`${flag} ${c?.name_zh || iso}: ${stat.count} ${_xl('次', 'times')}`);
   });
   // 圖例
   const legend = svgEl('text', { x: 8, y: H - 8, 'font-size': 10, fill: '#5a4a3a' }, svg);
-  legend.textContent = `${LANG==='en'?'Lived in':'曾活過'} ${visited.length} ${LANG==='en'?'countries':'個國家'}`;
+  legend.textContent = `${_xl('曾活過', 'Lived in')} ${visited.length} ${_xl('個國家', 'countries')}`;
   return svg;
 }
 
@@ -4210,14 +4233,14 @@ function renderMemorialWall(lives) {
     s.candlesByLife[mid] = (s.candlesByLife[mid] || 0) + 1;
     saveMemorialState(s);
     renderMemorialWall(lives);
-    toast(LANG === 'en' ? 'A candle lit 🕯️' : '已點一支蠟燭 🕯️', 1500);
+    toast(_xl('已點一支蠟燭 🕯️', 'A candle lit 🕯️'), 1500);
   });
   bind('#memorialHeart', (l, mid) => {
     const s = getMemorialState();
     s.heartsByLife[mid] = (s.heartsByLife[mid] || 0) + 1;
     saveMemorialState(s);
     renderMemorialWall(lives);
-    toast(LANG === 'en' ? 'Kept in heart 🤍' : '已記在心裡 🤍', 1500);
+    toast(_xl('已記在心裡 🤍', 'Kept in heart 🤍'), 1500);
   });
   bind('#memorialVisit', (l) => showLifeModal(l));
   bind('#memorialRandom', () => {
@@ -4284,12 +4307,12 @@ function renderSharedLives(lives) {
           <div class="shared-meta">${escapeHtml(loc?.name || life.country || '?')} · ${sexLabel} · ${life.age || '?'} ${t('unit.years')}</div>
         </div>
       </div>
-      <div class="shared-quote ${oneLine ? '' : 'shared-empty'}">${oneLine ? escapeHtml(oneLine) : (LANG==='en'?'(no words left behind)':'（沒有留下任何話）')}</div>
+      <div class="shared-quote ${oneLine ? '' : 'shared-empty'}">${oneLine ? escapeHtml(oneLine) : (_xl('（沒有留下任何話）', '(no words left behind)'))}</div>
       <div class="shared-story" data-story>${escapeHtml(fullStory).replace(/\n/g, '<br/>')}</div>
       <div class="shared-actions">
-        <button class="shared-action-btn heart ${hearts > 0 ? 'active' : ''}" data-act="heart">${hearts > 0 ? '♥' : '♡'} ${hearts > 0 ? hearts : ''} ${LANG==='en'?'Keep in heart':'記在心裡'}</button>
-        <button class="shared-action-btn report ${reported ? 'active' : ''}" data-act="report">${reported ? '✓' : '⚐'} ${LANG==='en'?'Report':'檢舉'}</button>
-        <button class="shared-expand-btn" data-act="expand">${LANG==='en'?'Expand ▼':'展開 ▼'}</button>
+        <button class="shared-action-btn heart ${hearts > 0 ? 'active' : ''}" data-act="heart">${hearts > 0 ? '♥' : '♡'} ${hearts > 0 ? hearts : ''} ${_xl('記在心裡', 'Keep in heart')}</button>
+        <button class="shared-action-btn report ${reported ? 'active' : ''}" data-act="report">${reported ? '✓' : '⚐'} ${_xl('檢舉', 'Report')}</button>
+        <button class="shared-expand-btn" data-act="expand">${_xl('展開 ▼', 'Expand ▼')}</button>
       </div>
     `;
     // 事件
@@ -4315,8 +4338,8 @@ function renderSharedLives(lives) {
       const story = card.querySelector('[data-story]');
       const isExpanded = story.classList.toggle('expanded');
       e.currentTarget.textContent = isExpanded
-        ? (LANG === 'en' ? '▲ Collapse' : '▲ 收合')
-        : (LANG === 'en' ? 'Expand ▼' : '展開 ▼');
+        ? (_xl('▲ 收合', '▲ Collapse'))
+        : (_xl('展開 ▼', 'Expand ▼'));
     });
     list.appendChild(card);
   });
@@ -4407,14 +4430,14 @@ function renderActivePlayersMap() {
       stroke: 'white', 'stroke-width': 1.5,
       opacity: p.active ? 1 : 0.7
     }, svg);
-    circle.addEventListener('mouseenter', e => showMapTooltip(e, `${p.flag} ${escapeHtml(p.name)}<br>${LANG==='en'?'Age':'年齡'} ${p.age}${LANG===''?' ':' '}<br>${p.active ? (LANG==='en'?'● Active':'● 進行中') : (LANG==='en'?'○ Past':'○ 過去')}`));
+    circle.addEventListener('mouseenter', e => showMapTooltip(e, `${p.flag} ${escapeHtml(p.name)}<br>${_xl('年齡', 'Age')} ${p.age}${LANG===''?' ':' '}<br>${p.active ? (_xl('● 進行中', '● Active')) : (_xl('○ 過去', '○ Past'))}`));
     circle.addEventListener('mouseleave', hideMapTooltip);
     const flagText = svgEl('text', { x, y: y - r - 4, 'font-size': 12, 'text-anchor': 'middle' }, svg);
     flagText.textContent = p.flag;
   });
   // 圖例
   const legend = svgEl('text', { x: 8, y: H - 8, 'font-size': 10, fill: '#5a4a3a' }, svg);
-  legend.textContent = `${LANG==='en'?'Active lives':'進行中人生'} ${points.length}${LANG===''?'':' '}${LANG==='en'?'/ past countries':'/ 過去國家'} ${pastCountries.size}`;
+  legend.textContent = `${_xl('進行中人生', 'Active lives')} ${points.length}${LANG===''?'':' '}${_xl('/ 過去國家', '/ past countries')} ${pastCountries.size}`;
   wrap.innerHTML = '';
   wrap.appendChild(svg);
 }
@@ -4567,7 +4590,7 @@ function renderEndCauseAnalysis() {
   const { top } = computeLifetimeCauses(life);
   const isEn = LANG === 'en';
   wrap.innerHTML = `
-    <h3>${isEn ? '⚖️ Death cause analysis' : '⚖️ 死亡原因分析'}</h3>
+    <h3>${_xl('⚖️ 死亡原因分析', '⚖️ Death cause analysis')}</h3>
     <div class="eca-section">
       <h4 style="font-size:13px;color:var(--ink-2);margin:0 0 8px;">${t('end.causeYear')}</h4>
       <p class="muted" style="font-size:11px;margin:0 0 8px;">${t('end.causeYearAge', deathAge)}</p>
@@ -4615,22 +4638,22 @@ function showShortcutsModal() {
   document.querySelector('#shortcutsModal')?.remove();
   const isEn = LANG === 'en';
   const rows = [
-    ['Space', isEn ? 'Pause / Resume life' : '暫停 / 繼續'],
-    ['1 / 2 / 4 / 8', isEn ? 'Speed 1× / 2× / 4× / 8×' : '速度 1× / 2× / 4× / 8×'],
-    ['I / L / S / T / E', isEn ? 'Switch tab: Intro / Lab / Shelf / Tree / End' : '切換 tab：開始 / Lab / 書架 / 族譜 / 訃聞'],
-    ['R', isEn ? 'Rebirth (new country)' : '重新出生（換國家）'],
-    ['?', isEn ? 'This shortcuts modal' : '本快捷鍵說明']
+    ['Space', _xl('暫停 / 繼續', 'Pause / Resume life')],
+    ['1 / 2 / 4 / 8', _xl('速度 1× / 2× / 4× / 8×', 'Speed 1× / 2× / 4× / 8×')],
+    ['I / L / S / T / E', _xl('切換 tab：開始 / Lab / 書架 / 族譜 / 訃聞', 'Switch tab: Intro / Lab / Shelf / Tree / End')],
+    ['R', _xl('重新出生（換國家）', 'Rebirth (new country)')],
+    ['?', _xl('本快捷鍵說明', 'This shortcuts modal')]
   ];
   const html = `
     <div id="shortcutsModal" class="life-modal">
       <div class="life-modal-card shortcuts-card">
         <button class="lm-close" onclick="document.getElementById('shortcutsModal').remove()">×</button>
-        <h2 class="lm-title">⌨️ ${isEn ? 'Keyboard shortcuts' : '鍵盤快捷鍵'}</h2>
+        <h2 class="lm-title">⌨️ ${_xl('鍵盤快捷鍵', 'Keyboard shortcuts')}</h2>
         <table class="shortcuts-table">
-          <thead><tr><th>${isEn ? 'Key' : '按鍵'}</th><th>${isEn ? 'Action' : '動作'}</th></tr></thead>
+          <thead><tr><th>${_xl('按鍵', 'Key')}</th><th>${_xl('動作', 'Action')}</th></tr></thead>
           <tbody>${rows.map(r => `<tr><td><kbd>${r[0]}</kbd></td><td>${r[1]}</td></tr>`).join('')}</tbody>
         </table>
-        <p class="muted" style="margin-top:12px;">${isEn ? 'Press <kbd>?</kbd> anytime to toggle this. Shortcuts skip when typing in inputs.' : '隨時按 <kbd>?</kbd> 切換本說明。在輸入框中會自動跳過。'}</p>
+        <p class="muted" style="margin-top:12px;">${_xl('隨時按 <kbd>?</kbd> 切換本說明。在輸入框中會自動跳過。', 'Press <kbd>?</kbd> anytime to toggle this. Shortcuts skip when typing in inputs.')}</p>
       </div>
     </div>`;
   const wrap = document.createElement('div');
@@ -4680,7 +4703,7 @@ function showLifeModal(rec) {
       </div>
       <div id="lifeTree" class="life-tree"></div>
       <div class="life-quotes">
-        <h4>${isEn ? 'Memorable moments' : '☆ 值得記住的時刻'}</h4>
+        <h4>${_xl('☆ 值得記住的時刻', 'Memorable moments')}</h4>
         <div class="lq-list">${Object.entries(life.quotes || {}).map(([age, q]) => `<div class="ql-row"><span class="ql-age">${age} ${t('unit.years')}</span><span class="ql-text">${escapeHtml(q)}</span></div>`).join('') || '<span class="muted">—</span>'}</div>
       </div>
     </div>
@@ -4864,9 +4887,7 @@ function renderPanorama(lives) {
       <h2 class="lm-title">🌐 ${t('shelf.panorama') || '家族全景圖'}</h2>
       <p class="muted">${t('shelf.panoramaSub') || '合併 ' + lives.length + ' 段人生的族譜。共同祖先以紅框標示。'}</p>
       ${commonAncestors.length ? `<div class="panorama-common"><b>${t('shelf.commonAncestors') || '共同親屬'}：</b> ${commonAncestors.map(c => escapeHtml(c.name)).join('、')}</div>` : `<div class="panorama-common"><span class="muted">${t('shelf.noCommon') || '無共同親屬'}</span></div>`}
-      <div class="panorama-root muted">${LANG === 'en'
-        ? `Tree shown from <b>${escapeHtml(rootSelf.name || '—')}</b>, two generations up.`
-        : `下方的樹以 <b>${escapeHtml(rootSelf.name || '—')}</b> 為中心，往上兩代。`}</div>
+      <div class="panorama-root muted">${_xl(`下方的樹以 <b>${escapeHtml(rootSelf.name || '—')}</b> 為中心，往上兩代。`, `Tree shown from <b>${escapeHtml(rootSelf.name || '—')}</b>, two generations up.`)}</div>
       <div id="lifeTree" class="life-tree"></div>
     </div>
   `;
@@ -5093,7 +5114,7 @@ function displayLabResultsCompare(rA, rB) {
   const fmt0 = x => Math.round(x ?? 0);
   const html = `
     <div class="lab-section"><h3>${flag(rA.country)} ${rA.country.name_zh} vs ${flag(rB.country)} ${rB.country.name_zh}</h3>
-      <p class="muted">${rA.N} ${LANG==='en'?'lives per country':'人/國家'} · ${LANG==='en'?'avg lifespan, family stats':'平均壽命、家庭統計'}</p>
+      <p class="muted">${rA.N} ${_xl('人/國家', 'lives per country')} · ${_xl('平均壽命、家庭統計', 'avg lifespan, family stats')}</p>
       <table class="lab-compare">
         <thead><tr><th></th><th>${flag(rA.country)} ${rA.country.name_zh}</th><th>${flag(rB.country)} ${rB.country.name_zh}</th></tr></thead>
         <tbody>
@@ -5108,7 +5129,7 @@ function displayLabResultsCompare(rA, rB) {
         </tbody>
       </table>
     </div>
-    <div class="lab-section"><h3>${LANG==='en'?'Top causes':'死因分布對比'}</h3>
+    <div class="lab-section"><h3>${_xl('死因分布對比', 'Top causes')}</h3>
       <div class="lab-compare-causes">
         <div><h4>${flag(rA.country)} ${rA.country.name_zh}</h4>${renderCauseList(rA.causes)}</div>
         <div><h4>${flag(rB.country)} ${rB.country.name_zh}</h4>${renderCauseList(rB.causes)}</div>
@@ -5249,7 +5270,7 @@ function wire() {
     setCurrency(next);
     const lbl = $('#currencyLabel');
     if (lbl) lbl.textContent = next;
-    toast(LANG === 'en' ? `Currency: ${next}` : `貨幣：${next}`);
+    toast(_xl(`貨幣：${next}`, `Currency: ${next}`));
   });
   const themeBtn = $('#themeToggle');
   if (themeBtn) themeBtn.addEventListener('click', () => {
@@ -5257,7 +5278,7 @@ function wire() {
     const cur = order.find(c => document.body.classList.contains(c)) || 'theme-light';
     const next = order[(order.indexOf(cur) + 1) % order.length];
     setTheme(next);
-    toast(LANG === 'en' ? `Theme: ${next.replace('theme-','')}` : `主題：${next.replace('theme-','')}`);
+    toast(_xl(`主題：${next.replace('theme-','')}`, `Theme: ${next.replace('theme-','')}`));
   });
   // v5.50：略過可怕的情節（1in8b.life softBtn / softBtn2）— topbar 與 intro 兩處共用
   ['#btnSoftMode', '#softBtnIntro'].forEach(sel => {
@@ -5295,7 +5316,7 @@ function wire() {
     const c = pickBirthCountry();
     if (c) {
       stopTicker();
-      toast(LANG==='en' ? `Reborn in ${c.flag} ${c.name_en}` : `在 ${c.flag} ${localize(c).name} 重新出生`);
+      toast(_xl(`在 ${c.flag} ${localize(c).name} 重新出生`, `Reborn in ${c.flag} ${localize(c).name}`));
       startLife(c.id);
     }
   });
@@ -5327,7 +5348,7 @@ function wire() {
     const wrap = document.createElement('div');
     wrap.innerHTML = html || '<div class="muted">—</div>';
     document.querySelector('#endPastList')?.appendChild(wrap);
-    toast(LANG==='en' ? `Showing ${more.length} more` : `顯示 ${more.length} 段過去`);
+    toast(_xl(`顯示 ${more.length} 段過去`, `Showing ${more.length} more`));
   });
   $('#endViewShelf')?.addEventListener('click', () => setView('shelf'));
   $('#endResumeLife')?.addEventListener('click', () => {
@@ -5338,17 +5359,17 @@ function wire() {
     STATE.paused = false;
     setView('life');
     startTicker();
-    toast(LANG==='en' ? 'Life resumed' : '已回到那一生');
+    toast(_xl('已回到那一生', 'Life resumed'));
   });
   $('#endOrganize')?.addEventListener('click', () => {
     setView('shelf');
     setTimeout(() => document.querySelector('#manageRecordsBtn')?.click(), 200);
   });
   $('#endDeleteAll')?.addEventListener('click', () => {
-    if (confirm(LANG==='en' ? 'Delete all past lives?' : '刪除所有過去的人生？')) {
+    if (confirm(_xl('刪除所有過去的人生？', 'Delete all past lives?'))) {
       localStorage.setItem(STORAGE_KEY + ':past', '[]');
       renderEnd();
-      toast(LANG==='en' ? 'All deleted' : '已全部刪除');
+      toast(_xl('已全部刪除', 'All deleted'));
     }
   });
   const feedbackSubmit = $('#feedbackSubmit');
@@ -5427,7 +5448,7 @@ function wire() {
 
 /* ==== URL hash 分享：序列化 life 到 LZ-string-ish JSON base64 ==== */
 function shareTreeLink() {
-  if (!STATE.life) { toast(LANG === 'en' ? 'Start a life first' : '請先開始一段人生'); return; }
+  if (!STATE.life) { toast(_xl('請先開始一段人生', 'Start a life first')); return; }
   const { people, edges } = treePeopleGraph();
   const payload = {
     meta: { title: '族譜 · ' + (STATE.life.name.full || 'born-somewhere'), ts: Date.now() },
@@ -5443,13 +5464,13 @@ function shareTreeLink() {
   navigator.clipboard?.writeText(url).then(() => {
     toast(t('share.copied') || '已複製');
   }, () => {
-    prompt(LANG === 'en' ? 'Copy this URL:' : '複製此連結：', url);
+    prompt(_xl('複製此連結：', 'Copy this URL:'), url);
   });
 }
 
 /* ==== 完整生涯 JSON 匯出/匯入 ==== */
 function exportLifeJSON() {
-  if (!STATE.life) { toast(LANG === 'en' ? 'Start a life first' : '請先開始一段人生'); return; }
+  if (!STATE.life) { toast(_xl('請先開始一段人生', 'Start a life first')); return; }
   const payload = {
     type: 'born-somewhere-life',
     version: 1,
@@ -5468,13 +5489,13 @@ function exportLifeJSON() {
   a.href = url; a.download = `born-somewhere-${safeName}-${Date.now()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(LANG === 'en' ? 'Life exported' : '已匯出生涯');
+  toast(_xl('已匯出生涯', 'Life exported'));
 }
 
 /* v5.22：繼續一段過去的人生（從 shelf 載入並接續從當年齡） */
 function continueOldLife(pastLife) {
   if (!pastLife || pastLife.died) {
-    toast(LANG === 'en' ? 'Life already ended' : '這段人生已結束');
+    toast(_xl('這段人生已結束', 'Life already ended'));
     return;
   }
   stopTicker();
@@ -5490,7 +5511,7 @@ function continueOldLife(pastLife) {
   setView('life');
   setTimeout(() => {
     startTicker();
-    toast(LANG === 'en' ? `Continuing from age ${STATE.life.age}` : `從 ${STATE.life.age} 歲接續這一生`);
+    toast(_xl(`從 ${STATE.life.age} 歲接續這一生`, `Continuing from age ${STATE.life.age}`));
   }, 100);
 }
 
@@ -5525,7 +5546,7 @@ function importLifeJSON(file) {
   reader.onload = () => {
     try {
       const payload = JSON.parse(reader.result);
-      if (payload.type !== 'born-somewhere-life') throw new Error(LANG === 'en' ? 'Invalid format' : '格式不正確');
+      if (payload.type !== 'born-somewhere-life') throw new Error(_xl('格式不正確', 'Invalid format'));
       if (payload.state?.life) {
         STATE.life = payload.state.life;
         if (payload.state.pastLives) localStorage.setItem(STORAGE_KEY + ':past', JSON.stringify(payload.state.pastLives));
@@ -5533,7 +5554,7 @@ function importLifeJSON(file) {
         stopTicker();
         setView('life');
         renderAll();
-        toast(LANG === 'en' ? 'Life imported — press ⏸/▶ to resume' : '已匯入生涯，按 ⏸/▶ 繼續');
+        toast(_xl('已匯入生涯，按 ⏸/▶ 繼續', 'Life imported — press ⏸/▶ to resume'));
       } else { throw new Error('No life data'); }
     } catch (e) {
       console.error(e);
@@ -5565,7 +5586,7 @@ function loadFromHash() {
     TREE_STATE.rootId = 'self';
     setView('tree');
     renderTree();
-    toast(LANG === 'en' ? 'Loaded from URL' : '已從連結載入');
+    toast(_xl('已從連結載入', 'Loaded from URL'));
     return true;
   } catch (e) { console.error(e); return false; }
 }
@@ -5579,7 +5600,7 @@ function loadFromHash() {
         const parsed = window.Gedcom.import(text);
         STATE.importedFamily = parsed;  // 存到 STATE 供 GEDCOM.parse 之後用
         if (!STATE.life) {
-          toast(LANG === 'en' ? 'Start a life first, then import GEDCOM' : '請先開始一段人生，再匯入 GEDCOM');
+          toast(_xl('請先開始一段人生，再匯入 GEDCOM', 'Start a life first, then import GEDCOM'));
           return;
         }
         const f = STATE.life.family;
@@ -5589,7 +5610,7 @@ function loadFromHash() {
         // 自動找 self：用 @self@ xref 或姓名/出生年匹配現有 self
         const selfP = findSelfInGedcom(parsed);
         if (!selfP) {
-          toast(LANG === 'en' ? 'GEDCOM imported — pick a person from Tree dropdown' : '已匯入 GEDCOM，請從族譜中心人物選擇');
+          toast(_xl('已匯入 GEDCOM，請從族譜中心人物選擇', 'GEDCOM imported — pick a person from Tree dropdown'));
         } else {
           // 灌入 self 的家族
           const fMembers = buildFamilyAround(selfP, parsed);
@@ -6070,8 +6091,8 @@ function toggleSoftMode() {
   renderSoftModeBtn();
   renderAll();
   toast(STATE.softMode
-    ? (LANG === 'en' ? 'Heavy events are hidden' : '已略過可怕的情節')
-    : (LANG === 'en' ? 'Heavy events are shown' : '會顯示全部情節'));
+    ? (_xl('已略過可怕的情節', 'Heavy events are hidden'))
+    : (_xl('會顯示全部情節', 'Heavy events are shown')));
 }
 
 // ==== Service Worker 註冊（PWA 離線快取）====
@@ -6162,7 +6183,7 @@ function injectHelpFab() {
   if (document.querySelector('.help-fab')) return;
   const btn = document.createElement('button');
   btn.className = 'help-fab';
-  btn.title = LANG === 'en' ? 'Keyboard shortcuts (?)' : '鍵盤快捷鍵 (?)';
+  btn.title = _xl('鍵盤快捷鍵 (?)', 'Keyboard shortcuts (?)');
   btn.textContent = '?';
   btn.addEventListener('click', showShortcutsModal);
   document.body.appendChild(btn);
@@ -6460,14 +6481,14 @@ function computeCrossLifeEvents(p) {
       if (!STATE.eduMode && !STATE.softMode) {
         events.push({
           icon: '🕯️',
-          text: LANG === 'en' ? `${p.name} passed away when you were ${myAge}.` : `${p.name} 過世時，你 ${myAge} 歲。`,
+          text: _xl(`${p.name} 過世時，你 ${myAge} 歲。`, `${p.name} passed away when you were ${myAge}.`),
           kind: 'heavy'
         });
       }
     } else if (myAge > self.age) {
       events.push({
         icon: '🕯️',
-        text: LANG === 'en' ? `${p.name} would have been ${p.death.year - selfBirthYear} years older than you.` : `${p.name} 將在你 ${myAge} 歲時離世（在你身後）。`,
+        text: _xl(`${p.name} 將在你 ${myAge} 歲時離世（在你身後）。`, `${p.name} would have been ${p.death.year - selfBirthYear} years older than you.`),
         kind: 'forecast'
       });
     }
@@ -6476,13 +6497,13 @@ function computeCrossLifeEvents(p) {
   if (p.birth?.year && selfBirthYear) {
     const diff = p.birth.year - selfBirthYear;
     if (diff > 0 && diff < 30 && p.id !== 'self') {
-      const role = p.sex === 'M' ? (LANG === 'en' ? 'elder brother' : '兄長') : (LANG === 'en' ? 'elder sister' : '姊姊');
+      const role = p.sex === 'M' ? (_xl('兄長', 'elder brother')) : (_xl('姊姊', 'elder sister'));
       events.push({
         icon: '👫',
         text: LANG === 'en' ? `${p.name} is ${diff} years older than you (${role}).` : `${p.name} 比你大 ${diff} 歲（${role}）。`
       });
     } else if (diff < 0 && diff > -30) {
-      const role = p.sex === 'M' ? (LANG === 'en' ? 'younger brother' : '弟弟') : (LANG === 'en' ? 'younger sister' : '妹妹');
+      const role = p.sex === 'M' ? (_xl('弟弟', 'younger brother')) : (_xl('妹妹', 'younger sister'));
       events.push({
         icon: '👫',
         text: LANG === 'en' ? `${p.name} is ${-diff} years younger than you (${role}).` : `${p.name} 比你小 ${-diff} 歲（${role}）。`
@@ -6507,7 +6528,7 @@ function showPersonDetail(p) {
   let ownEventsHtml = '';
   if (p.id === 'self' && STATE.life && STATE.life.log) {
     const recent = STATE.life.log.filter(e => e.kind !== 'log').slice(-8);
-    ownEventsHtml = recent.length ? `<div class="pd-cross"><h4>${LANG==='en'?'Life milestones':'生命里程碑'}</h4>${recent.map(e => `<div class="pd-cross-row"><span class="pd-cross-icon">${e.icon||'·'}</span><span>${escapeHtml(e.text)}</span></div>`).join('')}</div>` : '';
+    ownEventsHtml = recent.length ? `<div class="pd-cross"><h4>${_xl('生命里程碑', 'Life milestones')}</h4>${recent.map(e => `<div class="pd-cross-row"><span class="pd-cross-icon">${e.icon||'·'}</span><span>${escapeHtml(e.text)}</span></div>`).join('')}</div>` : '';
   }
   panel.innerHTML = `
     <div class="pd-head">
@@ -6574,7 +6595,7 @@ function highlightTreeSearch(query) {
     }
   });
   const hint = $('#treeSearchHint');
-  if (hint) hint.textContent = q ? (LANG==='en' ? `${hits} matches` : `${hits} 個符合`) : '';
+  if (hint) hint.textContent = q ? (_xl(`${hits} 個符合`, `${hits} matches`)) : '';
 }
 
 function svgEl(tag, attrs, parent) {
@@ -6628,7 +6649,7 @@ function exportGEDCOM() {
 
 /* ==== 生命證書下載為 PNG ==== */
 function downloadLifeCertPNG() {
-  if (!STATE.life) { toast(LANG==='en' ? 'No life' : '沒有當前人生'); return; }
+  if (!STATE.life) { toast(_xl('沒有當前人生', 'No life')); return; }
   const life = STATE.life;
   const c = life.countryData;
   const loc = c ? localize(c) : { name: life.country };
@@ -6656,14 +6677,14 @@ function downloadLifeCertPNG() {
   // 大字歲數
   svgParts.push(`<text x="${W/2}" y="250" font-size="48" fill="#1a1a1a" text-anchor="middle" font-weight="bold">${life.deathAge || life.age} ${t('unit.years')}</text>`);
   // 副標題
-  svgParts.push(`<text x="${W/2}" y="285" font-size="14" fill="#5a4a3a" text-anchor="middle">${LANG==='en'?'Life Expectancy':'預期壽命'} ${c ? effectiveLe(c) : '—'} ${t('unit.years')}</text>`);
+  svgParts.push(`<text x="${W/2}" y="285" font-size="14" fill="#5a4a3a" text-anchor="middle">${_xl('預期壽命', 'Life Expectancy')} ${c ? effectiveLe(c) : '—'} ${t('unit.years')}</text>`);
   // 詳情
   const rowY = 320;
   const rows = [
-    [LANG==='en'?'Sex':'性別', life.sex === 'M' ? t('sex.male') : t('sex.female')],
-    [LANG==='en'?'Born':'出生', life.year || '?'],
-    [LANG==='en'?'Died':'逝世', life.died ? `${life.year + life.yearOffset}` : '—'],
-    [LANG==='en'?'Cause':'原因', escapeHtml(life.cause || (LANG==='en'?'(still alive)':'仍在世'))]
+    [_xl('性別', 'Sex'), life.sex === 'M' ? t('sex.male') : t('sex.female')],
+    [_xl('出生', 'Born'), life.year || '?'],
+    [_xl('逝世', 'Died'), life.died ? `${life.year + life.yearOffset}` : '—'],
+    [_xl('原因', 'Cause'), escapeHtml(life.cause || (_xl('仍在世', '(still alive)')))]
   ];
   rows.forEach((r, i) => {
     const yy = rowY + i * 28;
@@ -6672,10 +6693,10 @@ function downloadLifeCertPNG() {
   });
   // 章戳
   svgParts.push(`<circle cx="${W-110}" cy="430" r="36" fill="none" stroke="#8C1D3C" stroke-width="1.5" opacity="0.7"/>`);
-  svgParts.push(`<text x="${W-110}" y="425" font-size="10" fill="#8C1D3C" text-anchor="middle">${LANG==='en'?'BORN-SOMEWHERE':'選出生地'}</text>`);
+  svgParts.push(`<text x="${W-110}" y="425" font-size="10" fill="#8C1D3C" text-anchor="middle">${_xl('選出生地', 'BORN-SOMEWHERE')}</text>`);
   svgParts.push(`<text x="${W-110}" y="440" font-size="8" fill="#8C1D3C" text-anchor="middle">EST. 2024</text>`);
   // 底部
-  svgParts.push(`<text x="40" y="450" font-size="9" fill="#9a8a7a">${LANG==='en'?'Life certificate':'生命證書'} · born-somewhere v${APP_VERSION} · ${LANG==='en'?'Real statistics':'真實統計'}</text>`);
+  svgParts.push(`<text x="40" y="450" font-size="9" fill="#9a8a7a">${_xl('生命證書', 'Life certificate')} · born-somewhere v${APP_VERSION} · ${_xl('真實統計', 'Real statistics')}</text>`);
   svgParts.push(`</svg>`);
   const svgStr = svgParts.join('');
   // 轉成 PNG via canvas
@@ -6694,15 +6715,15 @@ function downloadLifeCertPNG() {
       const pngUrl = URL.createObjectURL(pngBlob);
       const a = document.createElement('a');
       const safeName = (life.name.full || life.name.full_en || 'life').replace(/[\/\\<>:"|?*\u0000-\u001f]/g, '_');
-      a.href = pngUrl; a.download = `${safeName}-${LANG==='en'?'certificate':'證書'}-${Date.now()}.png`;
+      a.href = pngUrl; a.download = `${safeName}-${_xl('證書', 'certificate')}-${Date.now()}.png`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { URL.revokeObjectURL(url); URL.revokeObjectURL(pngUrl); }, 1000);
-      toast(LANG==='en'?'Certificate downloaded':'證書已下載');
+      toast(_xl('證書已下載', 'Certificate downloaded'));
     }, 'image/png');
   };
   img.onerror = () => {
     URL.revokeObjectURL(url);
-    toast(LANG==='en'?'Image conversion failed':'圖片轉換失敗');
+    toast(_xl('圖片轉換失敗', 'Image conversion failed'));
   };
   img.src = url;
 }
@@ -6732,7 +6753,7 @@ function downloadBirthCardPNG() {
   parts.push(`<text x="36" y="68" font-size="22" fill="white" font-weight="bold">${c.flag} ${escapeHtml(loc.name)}</text>`);
   parts.push(`<text x="${W-36}" y="68" font-size="18" fill="white" text-anchor="end">${life.year + life.yearOffset}</text>`);
   // 註冊編號
-  parts.push(`<text x="${W/2}" y="120" font-size="11" fill="#8C1D3C" text-anchor="middle" font-weight="bold" letter-spacing="0.1em">${isEn?'BIRTH REGISTRATION':'出生登記'} · ${escapeHtml(life.regNumber || '')}</text>`);
+  parts.push(`<text x="${W/2}" y="120" font-size="11" fill="#8C1D3C" text-anchor="middle" font-weight="bold" letter-spacing="0.1em">${_xl('出生登記', 'BIRTH REGISTRATION')} · ${escapeHtml(life.regNumber || '')}</text>`);
   // 名字
   parts.push(`<text x="${W/2}" y="170" font-size="40" fill="#8C1D3C" text-anchor="middle" font-weight="bold">${escapeHtml(life.name?.full || '?')}</text>`);
   if (life.name?.full_en && life.name.full_en !== life.name.full) {
@@ -6741,16 +6762,16 @@ function downloadBirthCardPNG() {
   // 大字年齡
   parts.push(`<text x="${W/2}" y="270" font-size="56" fill="#1a1a1a" text-anchor="middle" font-weight="bold">${life.age} ${t('unit.years')}</text>`);
   // 副標題
-  parts.push(`<text x="${W/2}" y="305" font-size="14" fill="#5a4a3a" text-anchor="middle">${isEn?'Life expectancy':'預期壽命'} ${effectiveLe(c)} ${t('unit.years')} · ${isEn?'Born in':'出生於'} ${escapeHtml(loc.name)}</text>`);
+  parts.push(`<text x="${W/2}" y="305" font-size="14" fill="#5a4a3a" text-anchor="middle">${_xl('預期壽命', 'Life expectancy')} ${effectiveLe(c)} ${t('unit.years')} · ${_xl('出生於', 'Born in')} ${escapeHtml(loc.name)}</text>`);
   // 家庭背景
   const fd = life.fatherDetail || {};
   const md = life.motherDetail || {};
   parts.push(`<line x1="60" y1="335" x2="${W-60}" y2="335" stroke="#d8cdb8" stroke-width="1"/>`);
-  parts.push(`<text x="${W/2}" y="362" font-size="13" fill="#8C1D3C" text-anchor="middle" font-weight="bold">${isEn?'👪 Family Background':'👪 出身家庭'}</text>`);
+  parts.push(`<text x="${W/2}" y="362" font-size="13" fill="#8C1D3C" text-anchor="middle" font-weight="bold">${_xl('👪 出身家庭', '👪 Family Background')}</text>`);
   const fRows = [
-    [isEn?'Father':'父親', `${(life.family?.parents||[]).find(p=>p.sex==='M')?.name || '—'} · ${fd.age ? fd.age + t('unit.years') : ''}${fd.job ? ' · ' + fd.job : ''}`],
-    [isEn?'Mother':'母親', `${(life.family?.parents||[]).find(p=>p.sex==='F')?.name || '—'} · ${md.age ? md.age + t('unit.years') : ''}${md.job ? ' · ' + md.job : ''}`],
-    [isEn?'Religion · Place':'宗教 · 出生地', `${life.stats.religion || '—'} · ${life.stats.birthPlaceType === 'rural' ? (isEn?'🌾 Rural':'🌾 鄉村') : (isEn?'🏙️ Urban':'🏙️ 城市')}`]
+    [_xl('父親', 'Father'), `${(life.family?.parents||[]).find(p=>p.sex==='M')?.name || '—'} · ${fd.age ? fd.age + t('unit.years') : ''}${fd.job ? ' · ' + fd.job : ''}`],
+    [_xl('母親', 'Mother'), `${(life.family?.parents||[]).find(p=>p.sex==='F')?.name || '—'} · ${md.age ? md.age + t('unit.years') : ''}${md.job ? ' · ' + md.job : ''}`],
+    [_xl('宗教 · 出生地', 'Religion · Place'), `${life.stats.religion || '—'} · ${life.stats.birthPlaceType === 'rural' ? (_xl('🌾 鄉村', '🌾 Rural')) : (_xl('🏙️ 城市', '🏙️ Urban'))}`]
   ];
   fRows.forEach((r, i) => {
     const yy = 392 + i * 24;
@@ -6759,14 +6780,14 @@ function downloadBirthCardPNG() {
   });
   // 底部 — 同伴
   if (life.companions && life.companions.length) {
-    parts.push(`<text x="${W/2}" y="475" font-size="11" fill="#5a4a3a" text-anchor="middle">${isEn?'Born in the same second: ':'同一秒出生：'}${' '}${life.companions.slice(0,4).map(c=>c.flag + ' ' + (isEn?(c.nameEn||c.name):c.name)).join(' · ')}</text>`);
+    parts.push(`<text x="${W/2}" y="475" font-size="11" fill="#5a4a3a" text-anchor="middle">${_xl('同一秒出生：', 'Born in the same second: ')}${' '}${life.companions.slice(0,4).map(c=>c.flag + ' ' + (isEn?(c.nameEn||c.name):c.name)).join(' · ')}</text>`);
   }
   // 章戳
   parts.push(`<circle cx="${W-110}" cy="${H-25}" r="20" fill="none" stroke="#8C1D3C" stroke-width="1.5" opacity="0.7"/>`);
   parts.push(`<text x="${W-110}" y="${H-22}" font-size="8" fill="#8C1D3C" text-anchor="middle" font-weight="bold">BORN-SOMEWHERE</text>`);
   parts.push(`<text x="${W-110}" y="${H-12}" font-size="7" fill="#8C1D3C" text-anchor="middle">EST. 2024</text>`);
   // 底部 watermark
-  parts.push(`<text x="40" y="${H-12}" font-size="8" fill="#9a8a7a">${isEn?'Birth certificate · born-somewhere v'+APP_VERSION:'出生登記 · born-somewhere v'+APP_VERSION} · ${isEn?'Real statistics':'真實統計'}</text>`);
+  parts.push(`<text x="40" y="${H-12}" font-size="8" fill="#9a8a7a">${isEn?'Birth certificate · born-somewhere v'+APP_VERSION:'出生登記 · born-somewhere v'+APP_VERSION} · ${_xl('真實統計', 'Real statistics')}</text>`);
   parts.push(`</svg>`);
   const svgStr = parts.join('');
   const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
@@ -6784,15 +6805,15 @@ function downloadBirthCardPNG() {
       const pngUrl = URL.createObjectURL(pngBlob);
       const a = document.createElement('a');
       const safeName = (life.name?.full || life.name?.full_en || 'life').replace(/[\/\\<>:"|?*\u0000-\u001f]/g, '_');
-      a.href = pngUrl; a.download = `${safeName}-${isEn?'birth-card':'出生卡'}-${Date.now()}.png`;
+      a.href = pngUrl; a.download = `${safeName}-${_xl('出生卡', 'birth-card')}-${Date.now()}.png`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { URL.revokeObjectURL(url); URL.revokeObjectURL(pngUrl); }, 1000);
-      toast(isEn ? 'Birth card downloaded' : '出生卡已下載');
+      toast(_xl('出生卡已下載', 'Birth card downloaded'));
     }, 'image/png');
   };
   img.onerror = () => {
     URL.revokeObjectURL(url);
-    toast(isEn ? 'Image conversion failed' : '圖片轉換失敗');
+    toast(_xl('圖片轉換失敗', 'Image conversion failed'));
   };
   img.src = url;
 }

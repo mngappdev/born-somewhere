@@ -790,10 +790,11 @@
       old: { scene: 'bench', y: by + 80, zh: ['和最重要的人一起慢慢变老', `${by + 80} 年，${first} 80 岁。和${partner || tx('老朋友', 'an old friend')}坐在常去的那张长椅上，看落叶一片一片掉下来。谁也没说话，也不需要说话。`], en: ['To grow old slowly with someone dear', `In ${by + 80}, ${first} is 80, sitting with ${partner || 'an old friend'} on the usual bench, watching the leaves fall one by one. No one speaks; no one needs to.`] },
       study: { scene: 'grad', y: by + 22, zh: ['穿上学士服的那一天', `${by + 22} 年 6 月，${first}穿上学士服，把帽子用力抛向天空。台下的${mother}和${father}一直在擦眼泪。`], en: ['The day of a graduation gown', `June ${by + 22}: ${first} threw the cap high into the sky, while ${mother} and ${father} kept wiping their eyes.`] },
       reunion: { scene: 'home', y: by + Math.max(18, age - 1), zh: ['回家吃一顿团圆饭', `${by + Math.max(18, age - 1)} 年除夕，${first}推开家门，饭菜的香味先跑了出来。厨房里有人喊：「洗手吃饭啦！」一家人围着桌子，灯很暖。`], en: ['To come home for a reunion dinner', `New Year's Eve ${by + Math.max(18, age - 1)}. ${first} opened the door and the smell of dinner rushed out. "Wash your hands, food's ready!" The whole family round one table, under a warm light.`] },
-      travel: { scene: trip.kind, y: by + Math.min(40, Math.max(18, age - 1)), zh: [trip.zh, `${by + Math.min(40, Math.max(18, age - 1))} 年冬天，${first}第一次离开${s.loc.name}，飞到${destName}。${trip.line[0]}`], en: [trip.en, `Winter ${by + Math.min(40, Math.max(18, age - 1))}: ${first} left ${s.loc.name} for the first time and flew to ${destName}. ${trip.line[1]}`] },
+      travel: { scene: trip.kind, y: by + Math.min(40, Math.max(18, age - 1)), zh: [trip.zh, `${by + Math.min(40, Math.max(18, age - 1))} 年冬天，${first}第一次离开${s.loc.name}，飞到${destName}。${trip.line[0]}`], en: [trip.en, `Winter ${by + Math.min(40, Math.max(18, age - 1))}: ${first} left ${s.loc.name} for the first time and flew to ${destName}. ${tx(trip.line[0], trip.line[1])}`] },
     };
     const w = W_[type];
-    const [title, story] = isZh() ? w.zh : w.en;
+    // v6.37：其他语言查 xl 字典（译文不用 TA，所以下面替换 She/He 的规则碰不到它们）
+    const title = tx(w.zh[0], w.en[0]), story = tx(w.zh[1], w.en[1]);
     return { type, scene: w.scene, year: w.y, title, story: isZh() ? story.replace(/TA\s?/g, life.sex === 'F' ? '她' : '他') : story.replace(/(^|[.!?] )TA/g, (m, p) => p + (life.sex === 'F' ? 'She' : 'He')).replace(/TA/g, life.sex === 'F' ? 'she' : 'he'), rnd: seedRng((life.regNumber || '') + type) };
   }
   /* 场景绘图：粉彩、柔光、颗粒 */

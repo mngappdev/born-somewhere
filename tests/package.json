@@ -1,0 +1,11 @@
+{
+  "name": "born-somewhere-tests",
+  "private": true,
+  "description": "Headless-browser smoke tests for born-somewhere (uses the locally installed Microsoft Edge; no browser download).",
+  "scripts": {
+    "smoke": "node smoke.js"
+  },
+  "devDependencies": {
+    "playwright-core": "1.65.1"
+  }
+}
